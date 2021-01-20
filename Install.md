@@ -6,7 +6,7 @@ This guide is for building SDPD.
 
 1. sdpd is based on sdpb 2.4.0. Try to built sdpd 2.4.0 first and all its required libraries.
 
-2. On Perimeter Institute, I use following commands to build sdpd
+2. On the cluster of Perimeter Institute, I use following commands to build sdpd
 
         module load openmpi/gcc-9/64/4.0.5
         module load cmake/3.18.1
