@@ -27,7 +27,7 @@ Example :
     mpirun -n 80 sdpd --procsPerNode=80 --SDP1_db -s ./sdp1db.sdp -i ./sdp1theta.out --precision 768
 
 
-### Mode 2: `--SDP2_B_b_c` : All `B,b,c` changes. SDPD substracts two SDPs to get `dB,db,dc`.
+### Mode 2: `--SDP2_B_b_c` : All `B,b,c` changes. SDPD subtracts two SDPs to get `dB,db,dc`.
 
 In this mode, `[SDP1]` is a sdp folder contains same bootstrap condition that used to generate `[INCK]`. `[SDP2]` is a sdp folder contains slightly deformed bootstrap condition. SDPD will subtract SDP1-SDP2 to obtain `dB,db,dc` and compute the `dx,dy,dX,dY` with respect to those changes.
 
