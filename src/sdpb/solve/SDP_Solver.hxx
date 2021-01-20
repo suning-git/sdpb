@@ -38,6 +38,12 @@ public:
   // a Block_Diagonal_Matrix with the same structure as X
   Block_Diagonal_Matrix Y;
 
+
+  Block_Vector dx_backup;
+  Block_Diagonal_Matrix dX_backup;
+  Block_Vector dy_backup;
+  Block_Diagonal_Matrix dY_backup;
+
   /********************************************/
   // Solver status
 
@@ -81,13 +87,13 @@ public:
 
   SDP_Solver_Terminate_Reason
   run(const SDP_Solver_Parameters &parameters, const Block_Info &block_info,
-      const SDP &sdp, const El::Grid &grid, Timers &timers);
+      const SDP &sdp, const SDP &dsdp, const El::Grid &grid, Timers &timers);
 
   void
   step(const SDP_Solver_Parameters &parameters,
        const std::size_t &total_psd_rows,
        const bool &is_primal_and_dual_feasible, const Block_Info &block_info,
-       const SDP &sdp, const El::Grid &grid,
+       const SDP &sdp, const SDP &dsdp, const El::Grid &grid,
        const Block_Diagonal_Matrix &X_cholesky,
        const Block_Diagonal_Matrix &Y_cholesky,
        const Block_Diagonal_Matrix &bilinear_pairings_X_inv,

@@ -1,6 +1,8 @@
 #include "../../SDP_Solver.hxx"
 #include "../../../../Timers.hxx"
 
+#include "../../../../set_stream_precision.hxx"
+
 // The main solver loop
 
 void cholesky_decomposition(const Block_Diagonal_Matrix &A,
@@ -28,6 +30,7 @@ void compute_bilinear_pairings(
   Block_Diagonal_Matrix &bilinear_pairings_Y, Timers &timers);
 
 void compute_feasible_and_termination(
+	const El::BigFloat &primal_objective, const El::BigFloat &dual_objective,
   const SDP_Solver_Parameters &parameters, const El::BigFloat &primal_error,
   const El::BigFloat &dual_error, const El::BigFloat &duality_gap,
   const El::BigFloat &primal_step_length, const El::BigFloat &dual_step_length,
@@ -53,9 +56,11 @@ void compute_primal_residues_and_error_p_b_Bx(const Block_Info &block_info,
                                               Block_Vector &primal_residue_p,
                                               El::BigFloat &primal_error_p);
 
+El::BigFloat dot(const Block_Vector &a, const Block_Vector &b);
+
 SDP_Solver_Terminate_Reason
 SDP_Solver::run(const SDP_Solver_Parameters &parameters,
-                const Block_Info &block_info, const SDP &sdp,
+                const Block_Info &block_info, const SDP &sdp, const SDP &dsdp,
                 const El::Grid &grid, Timers &timers)
 {
   SDP_Solver_Terminate_Reason terminate_reason(
@@ -113,6 +118,84 @@ SDP_Solver::run(const SDP_Solver_Parameters &parameters,
                     block_info.psd_matrix_block_sizes.end(), size_t(0)));
 
   initialize_timer.stop();
+
+  size_t iteration = 1;
+
+  auto last_checkpoint_time(std::chrono::high_resolution_clock::now());
+
+
+  El::byte checkpoint_now(
+	  std::chrono::duration_cast<std::chrono::seconds>(
+		  std::chrono::high_resolution_clock::now() - last_checkpoint_time)
+	  .count()
+	  >= parameters.checkpoint_interval);
+  // Time varies between cores, so follow the decision of the root.
+  El::mpi::Broadcast(checkpoint_now, 0, El::mpi::COMM_WORLD);
+  if (checkpoint_now == true)
+  {
+	  save_checkpoint(parameters);
+	  last_checkpoint_time = std::chrono::high_resolution_clock::now();
+  }
+
+  compute_objectives(sdp, x, y, primal_objective, dual_objective,
+	  duality_gap, timers);
+
+  auto &cholesky_decomposition_timer(
+	  timers.add_and_start("run.choleskyDecomposition"));
+  cholesky_decomposition(X, X_cholesky);
+  cholesky_decomposition(Y, Y_cholesky);
+  cholesky_decomposition_timer.stop();
+
+  compute_bilinear_pairings(
+	  X_cholesky, Y, sdp.bilinear_bases_local, bilinear_pairings_workspace,
+	  bilinear_pairings_X_inv, bilinear_pairings_Y, timers);
+
+  compute_dual_residues_and_error(block_info, sdp, y, bilinear_pairings_Y,
+	  dual_residues, dual_error, timers);
+  compute_primal_residues_and_error_P_Ax_X(
+	  block_info, sdp, x, X, primal_residues, primal_error_P, timers);
+
+  // use y to set the sizes of primal_residue_p.  The data is
+  // overwritten in compute_primal_residues_and_error_p.
+  Block_Vector primal_residue_p(y);
+  compute_primal_residues_and_error_p_b_Bx(
+	  block_info, sdp, x, primal_residue_p, primal_error_p);
+
+  bool terminate_now, is_primal_and_dual_feasible;
+  compute_feasible_and_termination(
+	  primal_objective, dual_objective,
+	  parameters, primal_error(), dual_error, duality_gap,
+	  primal_step_length, dual_step_length, iteration,
+	  solver_timer.start_time, is_primal_and_dual_feasible, terminate_reason,
+	  terminate_now);
+
+
+  El::BigFloat mu, beta_corrector;
+  step(parameters, total_psd_rows, is_primal_and_dual_feasible, block_info,
+	  sdp, dsdp, grid, X_cholesky, Y_cholesky, bilinear_pairings_X_inv,
+	  bilinear_pairings_Y, primal_residue_p, mu, beta_corrector,
+	  primal_step_length, dual_step_length, terminate_now, timers);
+
+
+  print_iteration(iteration, mu, primal_step_length, dual_step_length,
+	  beta_corrector, *this, solver_timer.start_time,
+	  parameters.verbosity);
+
+
+  terminate_reason = SDP_Solver_Terminate_Reason::MaxComplementarityExceeded;
+
+  /*
+  for (size_t block = 0; block != x.blocks.size(); ++block)
+  {
+	  El::Print(x.blocks.at(block),
+		  std::to_string(x.blocks.at(block).Height()) + " "
+		  + std::to_string(x.blocks.at(block).Width()),
+		  "\n");
+  }
+  */
+
+
+  /*
   auto last_checkpoint_time(std::chrono::high_resolution_clock::now());
   for(size_t iteration = 1;; ++iteration)
     {
@@ -155,6 +238,7 @@ SDP_Solver::run(const SDP_Solver_Parameters &parameters,
 
       bool terminate_now, is_primal_and_dual_feasible;
       compute_feasible_and_termination(
+		  primal_objective, dual_objective,
         parameters, primal_error(), dual_error, duality_gap,
         primal_step_length, dual_step_length, iteration,
         solver_timer.start_time, is_primal_and_dual_feasible, terminate_reason,
@@ -179,6 +263,7 @@ SDP_Solver::run(const SDP_Solver_Parameters &parameters,
                       beta_corrector, *this, solver_timer.start_time,
                       parameters.verbosity);
     }
+	*/
 
   // Never reached
   solver_timer.stop();

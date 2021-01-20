@@ -18,76 +18,129 @@
 
 // C := alpha*A*B + beta*C
 void scale_multiply_add(const El::BigFloat &alpha,
-                        const Block_Diagonal_Matrix &A,
-                        const Block_Diagonal_Matrix &B,
-                        const El::BigFloat &beta, Block_Diagonal_Matrix &C);
+	const Block_Diagonal_Matrix &A,
+	const Block_Diagonal_Matrix &B,
+	const El::BigFloat &beta, Block_Diagonal_Matrix &C);
 
 // C := A B
 inline void multiply(const Block_Diagonal_Matrix &A,
-                     const Block_Diagonal_Matrix &B, Block_Diagonal_Matrix &C)
+	const Block_Diagonal_Matrix &B, Block_Diagonal_Matrix &C)
 {
-  scale_multiply_add(El::BigFloat(1), A, B, El::BigFloat(0), C);
+	scale_multiply_add(El::BigFloat(1), A, B, El::BigFloat(0), C);
 }
 
 // X := ACholesky^{-T} ACholesky^{-1} X = A^{-1} X
 void cholesky_solve(const Block_Diagonal_Matrix &ACholesky,
-                    Block_Diagonal_Matrix &X);
+	Block_Diagonal_Matrix &X);
 
 void compute_schur_RHS(const Block_Info &block_info, const SDP &sdp,
-                       const Block_Vector &dual_residues,
-                       const Block_Diagonal_Matrix &Z,
-                       Block_Vector &dx);
+	const Block_Vector &dual_residues,
+	const Block_Diagonal_Matrix &Z,
+	Block_Vector &dx);
+
+void compute_schur_RHS_db(const Block_Info &block_info, const SDP &sdp,
+	const Block_Vector &dual_residues,
+	const Block_Diagonal_Matrix &Z,
+	Block_Vector &dx);
+
+void compute_schur_RHS_dBbc(const Block_Info &block_info, const SDP &sdp,
+	const Block_Vector &y,
+	const Block_Diagonal_Matrix &Z,
+	Block_Vector &dx);
+
+void compute_primal_residues_and_error_p_b_Bx(const Block_Info &block_info,
+	const SDP &sdp,
+	const Block_Vector &x,
+	Block_Vector &primal_residue_p,
+	El::BigFloat &primal_error_p);
 
 void solve_schur_complement_equation(
-  const Block_Diagonal_Matrix &schur_complement_cholesky,
-  const Block_Matrix &schur_off_diagonal,
-  const El::DistMatrix<El::BigFloat> &Q, Block_Vector &dx, Block_Vector &dy);
+	const Block_Diagonal_Matrix &schur_complement_cholesky,
+	const Block_Matrix &schur_off_diagonal,
+	const El::DistMatrix<El::BigFloat> &Q, Block_Vector &dx, Block_Vector &dy);
 
 void compute_search_direction(
-  const Block_Info &block_info, const SDP &sdp, const SDP_Solver &solver,
-  const Block_Diagonal_Matrix &schur_complement_cholesky,
-  const Block_Matrix &schur_off_diagonal,
-  const Block_Diagonal_Matrix &X_cholesky, const El::BigFloat beta,
-  const El::BigFloat &mu, const Block_Vector &primal_residue_p,
-  const bool &is_corrector_phase,
-  const El::DistMatrix<El::BigFloat> &Q, Block_Vector &dx,
-  Block_Diagonal_Matrix &dX, Block_Vector &dy, Block_Diagonal_Matrix &dY)
+	const Block_Info &block_info, const SDP &sdp, const SDP &dsdp, const SDP_Solver &solver,
+	const Block_Diagonal_Matrix &schur_complement_cholesky,
+	const Block_Matrix &schur_off_diagonal,
+	const Block_Diagonal_Matrix &X_cholesky, const El::BigFloat beta,
+	const El::BigFloat &mu, const Block_Vector &primal_residue_p,
+	const bool &is_compute_derivative_dBdbdc,
+	const El::DistMatrix<El::BigFloat> &Q, Block_Vector &dx,
+	Block_Diagonal_Matrix &dX, Block_Vector &dy, Block_Diagonal_Matrix &dY)
 {
+
+	/**/
   // R = beta mu I - X Y (predictor phase)
   // R = beta mu I - X Y - dX dY (corrector phase)
-  Block_Diagonal_Matrix R(solver.X);
+	Block_Diagonal_Matrix R(solver.X);
 
-  scale_multiply_add(El::BigFloat(-1), solver.X, solver.Y, El::BigFloat(0), R);
-  if(is_corrector_phase)
-    {
-      scale_multiply_add(El::BigFloat(-1), dX, dY, El::BigFloat(1), R);
-    }
-  R.add_diagonal(beta * mu);
+	scale_multiply_add(El::BigFloat(-1), solver.X, solver.Y, El::BigFloat(0), R);
+	
+	/*
+	if (is_corrector_phase)
+	{
+		scale_multiply_add(El::BigFloat(-1), dX, dY, El::BigFloat(1), R);
+	}*/
+	R.add_diagonal(beta * mu);
 
-  // Z = Symmetrize(X^{-1} (PrimalResidues Y - R))
-  Block_Diagonal_Matrix Z(solver.X);
-  multiply(solver.primal_residues, solver.Y, Z);
-  Z -= R;
-  cholesky_solve(X_cholesky, Z);
-  Z.symmetrize();
+	// Z = Symmetrize(X^{-1} (PrimalResidues Y - R))
+	Block_Diagonal_Matrix Z(solver.X);
+	multiply(solver.primal_residues, solver.Y, Z);
+	Z -= R;
+	cholesky_solve(X_cholesky, Z);
+	Z.symmetrize();
 
-  // dx[p] = -dual_residues[p] - Tr(A_p Z)
-  // dy[n] = dualObjective[n] - (FreeVarMatrix^T x)_n
-  compute_schur_RHS(block_info, sdp, solver.dual_residues, Z, dx);
-  dy=primal_residue_p;
 
-  // Solve for dx, dy in-place
-  solve_schur_complement_equation(schur_complement_cholesky,
-                                  schur_off_diagonal, Q, dx, dy);
 
-  // dX = PrimalResidues + \sum_p A_p dx[p]
-  constraint_matrix_weighted_sum(block_info, sdp, dx, dX);
-  dX += solver.primal_residues;
+	if (is_compute_derivative_dBdbdc)
+	{
+		compute_schur_RHS_dBbc(block_info, dsdp, solver.y, Z, dx);
 
-  // dY = Symmetrize(X^{-1} (R - dX Y))
-  multiply(dX, solver.Y, dY);
-  dY -= R;
-  cholesky_solve(X_cholesky, dY);
-  dY.symmetrize();
-  dY *= El::BigFloat(-1);
+		El::BigFloat primal_error_dsdp;
+		compute_primal_residues_and_error_p_b_Bx(
+			block_info, dsdp, solver.x, dy, primal_error_dsdp);
+	}
+	else
+	{
+		// set dx=0
+		auto dx_block(dx.blocks.begin());
+		for (auto &block_index : block_info.block_indices)
+		{
+			*dx_block *= 0;
+			++dx_block;
+		}
+
+		// try to set dy = sdp.dual_objective_b
+		auto dy_block(dy.blocks.begin());
+		for (auto &block_index : block_info.block_indices)
+		{
+			*dy_block *= 0;
+
+			// The total primal error is the sum of all of the different
+			// blocks.  So to prevent double counting, only add
+			// dual_objective_b to one of the residue blocks.
+			if (block_index == 0)
+			{
+				El::Axpy(El::BigFloat(1), sdp.dual_objective_b, *dy_block);
+			}
+			++dy_block;
+		}
+	}
+
+
+	// Solve for dx, dy in-place
+	solve_schur_complement_equation(schur_complement_cholesky,
+		schur_off_diagonal, Q, dx, dy);
+
+	// dX = PrimalResidues + \sum_p A_p dx[p]
+	constraint_matrix_weighted_sum(block_info, sdp, dx, dX);
+	dX += solver.primal_residues;
+
+	// dY = Symmetrize(X^{-1} (R - dX Y))
+	multiply(dX, solver.Y, dY);
+	dY -= R;
+	cholesky_solve(X_cholesky, dY);
+	dY.symmetrize();
+	dY *= El::BigFloat(-1);
 }
