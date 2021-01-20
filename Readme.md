@@ -14,7 +14,7 @@ The usage of sdpd is
 
 `[N]` is the number of cpu cores. `[MODE]` specify which mode of sdpd, see below. `[SDP1]` and `[SDP2]` are two sdp folders. `[INCK]` is a checkpoint folder contains x,y,X,Y in text format (from sdpb `--writeSolution="x,y,X,Y"` option). `[OUTCK]` is a folder for saving `dx,dy,dX,dY`. The `-o` is optional. If not specified, `dx,dy,dX,dY` will not be saved. `[PRECISION]` should be the same precision that you used in sdpb to get `[INCK]`.
 
-Before above command, certain MPI command should be specified. The full command might look like `mpirun -n [N] sdpd...` . The `mpirun -n [N]` part could be slightly different in different clusters. It should be the command you use for sdpb 2.4.0.
+Before above command, certain MPI command should be specified. The full command might look like `mpirun -n [N] sdpd ...` . The `mpirun -n [N]` part could be slightly different in different clusters. It should be the command you use for sdpb 2.4.0.
 
 SDPD can work in 3 different modes. In all modes, the derivative of the primal objective is returned by printing out `[SDPDReturnBegin]...[SDPDReturnEnd]`.
 
