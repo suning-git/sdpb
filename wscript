@@ -76,87 +76,8 @@ def build(bld):
                         'src/sdpb/solve/SDP_Solver_Terminate_Reason/ostream.cxx',
                         'src/sdpb/solve/lower_triangular_transpose_solve.cxx',
                         'src/sdpb/solve/Block_Diagonal_Matrix/ostream.cxx'],
-                target='sdpb',
+                target='sdpd',
                 cxxflags=default_flags,
                 use=use_packages
                 )
-    
-    library_sources=['src/sdp_convert/Dual_Constraint_Group/Dual_Constraint_Group/Dual_Constraint_Group.cxx',
-                     'src/sdp_convert/Dual_Constraint_Group/Dual_Constraint_Group/sample_bilinear_basis.cxx',
-                     'src/sdp_convert/write_objectives.cxx',
-                     'src/sdp_convert/write_bilinear_bases.cxx',
-                     'src/sdp_convert/write_blocks.cxx',
-                     'src/sdp_convert/write_primal_objective_c.cxx',
-                     'src/sdp_convert/write_free_var_matrix.cxx',
-                     'src/sdp_convert/write_sdpb_input_files.cxx',
-                     'src/sdp_convert/read_file_list.cxx']
-
-    bld.stlib(source=library_sources,
-              target='sdp_convert',
-              cxxflags=default_flags,
-              use=use_packages)
-
-    bld.program(source=['src/pvm2sdp/main.cxx',
-                        'src/pvm2sdp/parse_command_line.cxx',
-                        'src/pvm2sdp/read_input_files/read_input_files.cxx',
-                        'src/pvm2sdp/read_input_files/read_xml_input/read_xml_input.cxx',
-                        'src/pvm2sdp/read_input_files/read_xml_input/Input_Parser/on_start_element.cxx',
-                        'src/pvm2sdp/read_input_files/read_xml_input/Input_Parser/on_end_element.cxx',
-                        'src/pvm2sdp/read_input_files/read_xml_input/Input_Parser/on_characters.cxx'],
-                target='pvm2sdp',
-                cxxflags=default_flags,
-                use=use_packages + ['sdp_convert']
-                )
-
-    bld.program(source=['src/sdp2input/main.cxx',
-                        'src/sdp2input/read_input/read_input.cxx',
-                        'src/sdp2input/read_input/read_json/read_json.cxx',
-                        'src/sdp2input/read_input/read_json/Positive_Matrix_With_Prefactor_State/json_key.cxx',
-                        'src/sdp2input/read_input/read_json/Positive_Matrix_With_Prefactor_State/json_string.cxx',
-                        'src/sdp2input/read_input/read_json/Positive_Matrix_With_Prefactor_State/json_start_array.cxx',
-                        'src/sdp2input/read_input/read_json/Positive_Matrix_With_Prefactor_State/json_end_array.cxx',
-                        'src/sdp2input/read_input/read_json/Positive_Matrix_With_Prefactor_State/json_start_object.cxx',
-                        'src/sdp2input/read_input/read_json/Positive_Matrix_With_Prefactor_State/json_end_object.cxx',
-                        'src/sdp2input/read_input/read_json/Damped_Rational_State/json_key.cxx',
-                        'src/sdp2input/read_input/read_json/Damped_Rational_State/json_string.cxx',
-                        'src/sdp2input/read_input/read_json/Damped_Rational_State/json_start_array.cxx',
-                        'src/sdp2input/read_input/read_json/Damped_Rational_State/json_end_array.cxx',
-                        'src/sdp2input/read_input/read_json/Damped_Rational_State/json_start_object.cxx',
-                        'src/sdp2input/read_input/read_json/Damped_Rational_State/json_end_object.cxx',
-                        'src/sdp2input/read_input/read_json/JSON_Parser/Key.cxx',
-                        'src/sdp2input/read_input/read_json/JSON_Parser/String.cxx',
-                        'src/sdp2input/read_input/read_json/JSON_Parser/StartArray.cxx',
-                        'src/sdp2input/read_input/read_json/JSON_Parser/EndArray.cxx',
-                        'src/sdp2input/read_input/read_json/JSON_Parser/StartObject.cxx',
-                        'src/sdp2input/read_input/read_json/JSON_Parser/EndObject.cxx',
-                        'src/sdp2input/read_input/read_mathematica/read_mathematica.cxx',
-                        'src/sdp2input/read_input/read_mathematica/parse_SDP/parse_SDP.cxx',
-                        'src/sdp2input/read_input/read_mathematica/parse_SDP/parse_matrices.cxx',
-                        'src/sdp2input/read_input/read_mathematica/parse_SDP/parse_number.cxx',
-                        'src/sdp2input/read_input/read_mathematica/parse_SDP/parse_polynomial.cxx',
-                        'src/sdp2input/read_input/read_mathematica/parse_SDP/parse_matrix/parse_matrix.cxx',
-                        'src/sdp2input/read_input/read_mathematica/parse_SDP/parse_matrix/parse_damped_rational.cxx',
-                        'src/sdp2input/write_output/write_output.cxx',
-                        'src/sdp2input/write_output/sample_points.cxx',
-                        'src/sdp2input/write_output/bilinear_basis/bilinear_basis.cxx',
-                        'src/sdp2input/write_output/bilinear_basis/precompute/precompute.cxx',
-                        'src/sdp2input/write_output/bilinear_basis/precompute/integral.cxx',
-                        'src/sdp2input/write_output/bilinear_basis/bilinear_form/bilinear_form.cxx',
-                        'src/sdp2input/write_output/bilinear_basis/bilinear_form/rest.cxx',
-                        'src/sdp2input/write_output/bilinear_basis/bilinear_form/dExp.cxx',
-                        'src/sdp2input/write_output/bilinear_basis/bilinear_form/derivative.cxx',
-                        'src/sdp2input/write_output/bilinear_basis/bilinear_form/operator_plus_set_Derivative_Term.cxx'],
-                target='sdp2input',
-                cxxflags=default_flags,
-                use=use_packages + ['sdp_convert']
-                )
-
-    bld.program(source=['src/block_grid_mapping/main.cxx',
-                        'src/compute_block_grid_mapping.cxx'],
-                target='block_grid_mapping',
-                cxxflags=default_flags,
-                use=use_packages
-                )
-                
-                        
     
