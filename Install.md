@@ -23,3 +23,25 @@ This guide is for building SDPD.
         ./waf install
 
     The commands are essentially the same from sdpb 2.4.0, except downloading. A binary named sdpd will appear in the folder specified by --prefix.
+
+On the Caltech cluster, I use following commands to build sdpd
+
+        module load cmake/3.10.2 gcc/7.3.0 openmpi/3.0.0 boost/1_68_0-gcc730
+        
+        git clone https://gitlab.com/bootstrapcollaboration/elemental.git
+        mkdir -p elemental/build
+        cd elemental/build
+        export CXX=mpicxx
+        export CC=mpicc
+        cmake .. -DCMAKE_INSTALL_PREFIX=/central/groups/dssimmon/ning/packages/install
+        make && make install
+        
+        cd ../..
+        git clone https://github.com/Tencent/rapidjson.git
+
+        git clone https://github.com/suning1985/sdpb.git
+        cd sdpb
+        git checkout sdpd_experimental
+        
+        ./waf configure --prefix /central/groups/dssimmon/ning/packages/install/sdpd --elemental-dir=/central/groups/dssimmon/ning/packages/install --rapidjson-incdir=/central/groups/dssimmon/ning/packages/rapidjson/include
+        ./waf install
