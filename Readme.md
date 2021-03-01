@@ -33,7 +33,7 @@ In this mode, `[SDP1]` is a sdp folder contains same bootstrap condition that us
 
 Example :
 
-    mpirun -n 80 sdpd --procsPerNode=80 --SDP2_B_b _c -s ./sdp1theta.sdp -d ./sdp2theta.sdp -i ./sdp1theta.out --precision 768
+    mpirun -n 80 sdpd --procsPerNode=80 --SDP2_B_b_c -s ./sdp1theta.sdp -d ./sdp2theta.sdp -i ./sdp1theta.out --precision 768
 
 
 ### Mode 3: `--SDP2_dB_db_dc` : All `B,b,c` changes. The exact `dB,db,dc` is given to SDPD.
@@ -42,5 +42,5 @@ In this mode, `[SDP1]` is a sdp folder contains same bootstrap condition that us
 
 Example :
 
-    mpirun -n 80 sdpd --procsPerNode=80 --SDP2_dB_db _dc -s ./sdp1theta.sdp -d ./dsdptheta.sdp -i ./sdp1theta.out --precision 768
+    mpirun -n 80 sdpd --procsPerNode=80 --SDP2_dB_db_dc -s ./sdp1theta.sdp -d ./dsdptheta.sdp -i ./sdp1theta.out --precision 768
 
