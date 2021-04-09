@@ -36,6 +36,12 @@ SDP_Solver_Parameters::SDP_Solver_Parameters(int argc, char *argv[])
     "Any parameter can optionally be set via this file in key=value "
     "format. Command line arguments override values in the parameter "
     "file.");
+
+  basic_options.add_options()(
+	  "DerivSDPList,d", po::value< std::vector<boost::filesystem::path> >(&list_sdp2_path)->multitoken(),
+	  "A list of SDP_i"
+	  );
+
   basic_options.add_options()(
     "outDir,o", po::value<boost::filesystem::path>(&out_directory),
     "The optimal solution is saved to this directory in Mathematica "
@@ -89,6 +95,22 @@ SDP_Solver_Parameters::SDP_Solver_Parameters(int argc, char *argv[])
   // precision defaults results in differences of about 1e-15 in
   // primalObjective after one step.
   po::options_description solver_options("Solver parameters");
+
+  // options for SDPD mode 
+  solver_options.add_options()(
+	  "SDP1_db",
+	  po::bool_switch(&sdpd_mode_db)->default_value(false),
+	  "SDPD mode 1: SDP1 is specified by -s. SPD1 contains exact db.");
+  solver_options.add_options()(
+	  "SDP2_B_b_c",
+	  po::bool_switch(&sdpd_mode_Bbc)->default_value(false),
+	  "SDPD mode 2: SDP1 is specified by -s. SDP2 is specified by -d. SDPD will substract SDP1-SDP2 to get dB,db,dc.");
+  solver_options.add_options()(
+	  "SDP2_dB_db_dc",
+	  po::bool_switch(&sdpd_mode_dBdbdc)->default_value(false),
+	  "SDPD mode 3: SDP1 is specified by -s. SDP2 is specified by -d. SDP2 contains dB,db,dc.");
+
+
   solver_options.add_options()(
     "precision", po::value<size_t>(&precision)->default_value(400),
     "The precision, in the number of bits, for numbers in the "
@@ -245,13 +267,30 @@ SDP_Solver_Parameters::SDP_Solver_Parameters(int argc, char *argv[])
 
           if(variables_map.count("outDir") == 0)
             {
+			  no_final_checkpoint = true;
+			  /*
               out_directory = sdp_directory;
               if(out_directory.filename() == ".")
                 {
                   out_directory = out_directory.parent_path();
                 }
               out_directory += "_out";
+			  */
             }
+
+		  if (!no_final_checkpoint)
+		  {
+			  if (El::mpi::Rank() == 0)
+			  {
+				  boost::filesystem::create_directories(out_directory);
+				  boost::filesystem::ofstream ofs(out_directory / "out.txt");
+				  if (!ofs.good())
+				  {
+					  throw std::runtime_error("Cannot write to outDir: "
+						  + out_directory.string());
+				  }
+			  }
+		  }
 
           if(variables_map.count("checkpointDir") == 0)
             {
@@ -265,25 +304,49 @@ SDP_Solver_Parameters::SDP_Solver_Parameters(int argc, char *argv[])
 
           if(variables_map.count("initialCheckpointDir") == 0)
             {
-              checkpoint_in = checkpoint_out;
+			  if (El::mpi::Rank() == 0)
+			  {
+				  std::cout << "Error : the options -i is required.\n";
+			  }
+			  El::mpi::Abort(El::mpi::COMM_WORLD, 1);
             }
           else
             {
               require_initial_checkpoint = true;
             }
 
-          write_solution = Write_Solution(write_solution_string);
+		  if (variables_map.count("DerivSDPList") == 0)
+		  {
+			  compute_derivative_dBdbdc = false;
+		  }
+		  else
+		  {
+			  compute_derivative_dBdbdc = true;
+		  }
 
-          if(El::mpi::Rank() == 0)
-            {
-              boost::filesystem::create_directories(out_directory);
-              boost::filesystem::ofstream ofs(out_directory / "out.txt");
-              if(!ofs.good())
-                {
-                  throw std::runtime_error("Cannot write to outDir: "
-                                           + out_directory.string());
-                }
-            }
+		  if ((!sdpd_mode_db) && (!sdpd_mode_Bbc) && (!sdpd_mode_dBdbdc))
+		  {
+			  if (El::mpi::Rank() == 0)
+			  {
+				  std::cout << "Error : one of following options need be specified : --SDP1_db, --SDP2_B_b_c, --SDP2_dB_db_dc\n";
+			  }
+			  El::mpi::Abort(El::mpi::COMM_WORLD, 1);
+		  }
+
+		  if (list_sdp2_path.size()<1)
+		  {
+			  if (El::mpi::Rank() == 0)
+			  {
+				  std::cout << "Error : -d should followed by at least one sdp file.\n";
+			  }
+			  El::mpi::Abort(El::mpi::COMM_WORLD, 1);
+		  }
+
+          //write_solution = Write_Solution(write_solution_string);
+		  write_solution.matrix_X = true;
+		  write_solution.matrix_Y = true;
+		  write_solution.vector_x = true;
+		  write_solution.vector_y = true;
 
           if(int_verbosity != 0 && int_verbosity != 1 && int_verbosity != 2)
             {

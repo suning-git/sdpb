@@ -43,6 +43,9 @@ int main(int argc, char **argv)
       Block_Info block_info(parameters.sdp_directory, parameters.checkpoint_in,
                             parameters.procs_per_node,
                             parameters.proc_granularity, parameters.verbosity);
+
+	  // if (parameters.compute_sdp2_derivative){}
+
       // Only generate a block_timings file if
       // 1) We are running in parallel
       // 2) We did not load a block_timings file

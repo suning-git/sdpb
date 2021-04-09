@@ -18,6 +18,20 @@
 
 #include <boost/filesystem.hpp>
 
+
+class DSDPSOLUTION
+{
+public:
+	Block_Vector dx;
+	Block_Diagonal_Matrix dX;
+	Block_Vector dy;
+	Block_Diagonal_Matrix dY;
+
+	DSDPSOLUTION(const Block_Vector&x, const Block_Diagonal_Matrix&X, const Block_Vector&y, const Block_Diagonal_Matrix&Y) : dx(x), dy(y), dX(X), dY(Y)
+	{
+	}
+};
+
 // SDPSolver contains the data structures needed during the running of
 // the interior point algorithm.  Each structure is allocated when an
 // SDPSolver is initialized, and reused in each iteration.
@@ -37,6 +51,9 @@ public:
 
   // a Block_Diagonal_Matrix with the same structure as X
   Block_Diagonal_Matrix Y;
+
+
+  std::vector<DSDPSOLUTION*> dsdp_sol_list;
 
   /********************************************/
   // Solver status
@@ -81,13 +98,13 @@ public:
 
   SDP_Solver_Terminate_Reason
   run(const SDP_Solver_Parameters &parameters, const Block_Info &block_info,
-      const SDP &sdp, const El::Grid &grid, Timers &timers);
+      const SDP &sdp, const std::vector<SDP*> dsdp_list, const El::Grid &grid, Timers &timers);
 
   void
   step(const SDP_Solver_Parameters &parameters,
        const std::size_t &total_psd_rows,
        const bool &is_primal_and_dual_feasible, const Block_Info &block_info,
-       const SDP &sdp, const El::Grid &grid,
+       const SDP &sdp, const std::vector<SDP*> dsdp_list, const El::Grid &grid,
        const Block_Diagonal_Matrix &X_cholesky,
        const Block_Diagonal_Matrix &Y_cholesky,
        const Block_Diagonal_Matrix &bilinear_pairings_X_inv,
@@ -108,3 +125,7 @@ public:
                   const Block_Info &block_info, const Verbosity &verbosity,
                   const bool &require_initial_checkpoint);
 };
+
+
+
+

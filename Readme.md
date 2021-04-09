@@ -1,84 +1,46 @@
 ## Contents
 
-* [SDPB](#sdpb)
-* [Installation and Usage](#installation-and-usage)
-* [Attribution](#attribution)
-* [Acknowledgements](#acknowledgements)
-* [Works Using SDPB](#works-using-sdpb)
+* [Usage](#installation-and-usage)
 
-# SDPB
+# SDPD
 
-SDPB is an open-source, arbitrary-precision, parallelized semidefinite
-program solver, designed for the conformal bootstrap. It solves the following problem:
+SDPD computes `dx,dy,dX,dY` and derivative of the primal objective with respect to the change of bootstrap condition.
 
-![maximize:  b_0 + \sum_n b_n y_n over (y_1,...,y_N), such that: M_{0j}(x) + \sum_n y_n M_{nj}(x) is positive semidefinite for all x >= 0 and 1 <= j <= J, where each M_{nj}(x) is a polynomial matrix in x.](/docs/SDPB-PMP-Description.png?raw=true)
+## Usage
 
-For more information, see [A Semidefinite Program Solver for the Conformal Bootstrap](http://arxiv.org/abs/1502.02033)
-and [the manual](/docs/SDPB-Manual.pdf).
+The usage of sdpd is
 
-Authors: David Simmons-Duffin (dsd@caltech.edu), Walter Landry (wlandry@caltech.edu).
+    sdpd --procsPerNode=[N] --[MODE] -s [SDP1] -d [SDP2] -i [INCK] -o [OUTCK] --precision=[PRECISION]
 
-On April 25, 2019, the main branch of this repository was updated to SDPB 2 which has very different performance characteristics and somewhat different usage instructions from version 1.0. Please see the changelog and other documentation for details.
+`[N]` is the number of cpu cores. `[MODE]` specify the mode of sdpd (see below). `[SDP1]` and `[SDP2]` are two sdp folders. `[INCK]` is a checkpoint folder contains `x,y,X,Y` in text format (from sdpb `--writeSolution="x,y,X,Y"` option). `[OUTCK]` is a folder for saving `dx,dy,dX,dY`. The `-o [OUTCK]` is optional. If not specified, `dx,dy,dX,dY` will not be saved. `[PRECISION]` should be the same precision that you used in sdpb to get `[INCK]`.
 
-## Installation and Usage
+Before above command, certain MPI command should be specified. The full command might look like `mpirun -n [N] sdpd ...` . The `mpirun -n [N]` part could be slightly different in different clusters. It should be the command you use for sdpb 2.4.0.
 
-The easiest way to run SDPB on a Windows or Mac machine is to follow
-the [Docker instructions](docs/Docker.md).  For Linux and HPC centers,
-the [Singularity](docs/Singularity.md) instructions will probably work
-better.  If you want to build it yourself, there are detailed
-instructions in [Install.md](Install.md).
+SDPD can work in 3 different modes. In all modes, the derivative of the primal objective is returned by printing out `[SDPDReturnBegin]...[SDPDReturnEnd]`.
 
-Usage instructions are detailed in [Usage.md](docs/Usage.md).
+### Mode 1: `--SDP1_db` : Only `b` changes.
 
-Two python wrappers for SDPB are available:
+In this mode, `[SDP1]` is a sdp folder contains same bootstrap condition that used to generate `[INCK]`, except the objective `b` is replace by a derivative `db`. `-d` should not be specified. SDPD will compute the `dx,dy,dX,dY` with respect to change of `db`.
 
-- [PyCFTBoot](https://github.com/cbehan/pycftboot) by Connor Behan ([arXiv:1602.02810](http://arxiv.org/abs/arXiv:1602.02810))
-- [cboot](https://github.com/tohtsky/cboot) by Tomoki Ohtsuki ([arXiv:1602.07295](http://arxiv.org/abs/arXiv:1602.07295)).
+Example :
 
-An unofficial Haskell wrapper is available:
+    mpirun -n 80 sdpd --procsPerNode=80 --SDP1_db -s ./sdp1db.sdp -i ./sdp1theta.out --precision 768
 
-- [sdpb-haskell](https://gitlab.com/davidsd/sdpb-haskell) by David Simmons-Duffin
 
-## Attribution
+### Mode 2: `--SDP2_B_b_c` : All `B,b,c` changes. SDPD subtracts two SDPs to get `dB,db,dc`.
 
-If you use SDPB in work that results in publication, consider citing
+In this mode, `[SDP1]` is a sdp folder contains same bootstrap condition that used to generate `[INCK]`. `[SDP2]` is a sdp folder contains slightly deformed bootstrap condition. SDPD will subtract `[SDP1]-[SDP2]` to obtain `dB,db,dc` and compute the `dx,dy,dX,dY` with respect to those changes.
 
-- D. Simmons-Duffin, *A Semidefinite Program Solver for the
-  Conformal Bootstrap*, JHEP 1506, 174 (2015) [arXiv:1502.02033 \[hep-th\]](http://arxiv.org/abs/1502.02033).
-- W. Landry and D. Simmons-Duffin, *Scaling the semidefinite program solver SDPB*
-  [arXiv:1909.09745 \[hep-th\]](https://arxiv.org/abs/1909.09745).
+Example :
 
-Depending on how SDPB is used, the following other sources might be relevant:
+    mpirun -n 80 sdpd --procsPerNode=80 --SDP2_B_b_c -s ./sdp1theta.sdp -d ./sdp2theta.sdp -i ./sdp1theta.out --precision 768
 
-The first use of semidefinite programming in the bootstrap:
 
-- D. Poland, D. Simmons-Duffin and A. Vichi, *Carving Out the Space of
-  4D CFTs*, JHEP 1205, 110 (2012) [arXiv:1109.5176 \[hep-th\]](http://arxiv.org/abs/1109.5176).
+### Mode 3: `--SDP2_dB_db_dc` : All `B,b,c` changes. The exact `dB,db,dc` is given to SDPD.
 
-The generalization of semidefinite programming methods to arbitrary
-spacetime dimension:
+In this mode, `[SDP1]` is a sdp folder contains same bootstrap condition that used to generate `[INCK]`. `[SDP2]` is a sdp folder contains the change of bootstrap condition `dB,db,dc`. SDPD computes the `dx,dy,dX,dY` with respect to those changes.
 
-- F. Kos, D. Poland and D. Simmons-Duffin, *Bootstrapping the O(N)
-  Vector Models*, JHEP 1406, 091 (2014) [arXiv:1307.6856 \[hep-th\]](http://arxiv.org/abs/1307.6856).
+Example :
 
-The generalization of semidefinite programming methods to arbitrary
-systems of correlation functions:
+    mpirun -n 80 sdpd --procsPerNode=80 --SDP2_dB_db_dc -s ./sdp1theta.sdp -d ./dsdptheta.sdp -i ./sdp1theta.out --precision 768
 
-- F. Kos, D. Poland and D. Simmons-Duffin, *Bootstrapping Mixed
-  Correlators in the 3D Ising Model*, JHEP 1411, 109 (2014) [arXiv:1406.4858 \[hep-th\]](http://arxiv.org/abs/1406.4858).
-
-## Acknowledgements
-
-- Version 2 of SDPB was made possible by the [Simons Collaboration on the Nonperturbative Bootstrap](http://bootstrapcollaboration.com/).
-
-- The design of SDPB was partially based on the solvers [SDPA](http://sdpa.sourceforge.net/) and SDPA-GMP, which were essential sources of inspiration and examples.
-
-- Thanks to Filip Kos, David Poland, and Alessandro Vichi for collaboration in developing semidefinite programming methods for the conformal bootstrap and assistance testing SDPB.
-
-- Thanks to Amir Ali Ahmadi, Hande Benson, Pablo Parrilo, and Robert Vanderbei for advice and discussions about semidefinite programming.
-
-- Thanks also to Noah Stein, who first suggested the idea of semidefinite programming to me in [this Math Overflow question](http://mathoverflow.net/questions/33242/continuous-linear-programming-estimating-a-solution).
-
-## Works Using SDPB
-
-As of April 2019, SDPB has been used in approximately 70 works. Here is [a list of papers citing SDPB](http://inspirehep.net/search?ln=en&p=refersto%3Arecid%3A1343540&sf=earliestdate).
