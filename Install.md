@@ -43,5 +43,5 @@ On the Caltech cluster, I use following commands to build sdpd
         cd sdpb
         git checkout sdpdd_experimental
         
-        ./waf configure --prefix /central/groups/dssimmon/ning/packages/install/sdpd --elemental-dir=/central/groups/dssimmon/ning/packages/install --rapidjson-incdir=/central/groups/dssimmon/ning/packages/rapidjson/include
+        ./waf configure --prefix /central/groups/dssimmon/ning/sdpdd_experimental/install --elemental-dir=/central/groups/dssimmon/ning/packages/install --rapidjson-incdir=/central/groups/dssimmon/ning/packages/rapidjson/include
         ./waf install
