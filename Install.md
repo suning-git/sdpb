@@ -33,7 +33,7 @@ On the Caltech cluster, I use following commands to build sdpd
         cd elemental/build
         export CXX=mpicxx
         export CC=mpicc
-        cmake .. -DCMAKE_INSTALL_PREFIX=/central/groups/dssimmon/ning/sdpdd_experimental/install
+        cmake .. -DCMAKE_INSTALL_PREFIX=/central/groups/dssimmon/ning/packages/install
         make && make install
         
         cd ../..
