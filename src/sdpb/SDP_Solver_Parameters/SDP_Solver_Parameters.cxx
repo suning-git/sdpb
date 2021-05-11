@@ -184,6 +184,11 @@ SDP_Solver_Parameters::SDP_Solver_Parameters(int argc, char *argv[])
     "Terminate if the complementarity mu = Tr(X Y)/dim(X) "
     "exceeds this value.");
 
+  solver_options.add_options()(
+	  "saveCheckpointAt",
+	  po::value<El::BigFloat>(&saveCheckpointAt),
+	  "finite difference for the derivatives");
+
   po::options_description cmd_line_options;
   cmd_line_options.add(required_options).add(basic_options).add(solver_options);
 
@@ -213,6 +218,15 @@ SDP_Solver_Parameters::SDP_Solver_Parameters(int argc, char *argv[])
         }
       else
         {
+		  if (variables_map.count("saveCheckpointAt") == 0)
+		  {
+			  saveCheckpointAtQ = false;
+		  }
+		  else
+		  {
+			  saveCheckpointAtQ = true;
+		  }
+
           if(variables_map.count("paramFile") != 0)
             {
               param_file

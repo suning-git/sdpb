@@ -30,6 +30,9 @@ struct SDP_Solver_Parameters
   boost::filesystem::path sdp_directory, out_directory, checkpoint_in,
     checkpoint_out, param_file;
 
+  El::BigFloat saveCheckpointAt;
+  bool saveCheckpointAtQ;
+
   SDP_Solver_Parameters(int argc, char *argv[]);
   bool is_valid() const { return !sdp_directory.empty(); }
 };

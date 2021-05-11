@@ -28,6 +28,7 @@ void compute_bilinear_pairings(
   Block_Diagonal_Matrix &bilinear_pairings_Y, Timers &timers);
 
 void compute_feasible_and_termination(
+	const El::BigFloat &primal_objective, const El::BigFloat &dual_objective,
   const SDP_Solver_Parameters &parameters, const El::BigFloat &primal_error,
   const El::BigFloat &dual_error, const El::BigFloat &duality_gap,
   const El::BigFloat &primal_step_length, const El::BigFloat &dual_step_length,
@@ -155,6 +156,7 @@ SDP_Solver::run(const SDP_Solver_Parameters &parameters,
 
       bool terminate_now, is_primal_and_dual_feasible;
       compute_feasible_and_termination(
+		  primal_objective, dual_objective,
         parameters, primal_error(), dual_error, duality_gap,
         primal_step_length, dual_step_length, iteration,
         solver_timer.start_time, is_primal_and_dual_feasible, terminate_reason,
@@ -178,6 +180,28 @@ SDP_Solver::run(const SDP_Solver_Parameters &parameters,
       print_iteration(iteration, mu, primal_step_length, dual_step_length,
                       beta_corrector, *this, solver_timer.start_time,
                       parameters.verbosity);
+
+	  if (parameters.saveCheckpointAtQ && mu < parameters.saveCheckpointAt && beta_corrector < 1)
+	  {
+		  boost::filesystem::path checkpoint_mid_out= parameters.sdp_directory;
+		  checkpoint_mid_out += ".mid.ck";
+
+		  if (parameters.verbosity >= Verbosity::regular && El::mpi::Rank() == 0)
+			  std::cout << "save mid checkpoint to " << checkpoint_mid_out << "\n";
+
+		  if (!exists(checkpoint_mid_out))
+		  {
+			  create_directories(checkpoint_mid_out);
+		  }
+
+		  save_solution(SDP_Solver_Terminate_Reason::PrimalDualOptimal, timers.front(), checkpoint_mid_out,
+			  parameters.write_solution,
+			  block_info.block_indices,
+			  parameters.verbosity);
+
+		  const_cast<bool&>(parameters.saveCheckpointAtQ) = false;
+	  }
+
     }
 
   // Never reached
