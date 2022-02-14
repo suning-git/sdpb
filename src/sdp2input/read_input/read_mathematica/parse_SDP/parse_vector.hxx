@@ -8,8 +8,14 @@
 
 template <typename T>
 const char *
+sb_parse_vector(const char *begin, const char *end, std::vector<T> &result_vector);
+
+template <typename T>
+const char *
 parse_vector(const char *begin, const char *end, std::vector<T> &result_vector)
 {
+  return sb_parse_vector(begin, end, result_vector);
+
   const auto open_brace(std::find(begin, end, '{'));
   if(open_brace == end)
     {

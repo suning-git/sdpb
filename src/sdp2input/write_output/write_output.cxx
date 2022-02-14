@@ -15,6 +15,7 @@ void write_output(const boost::filesystem::path &output_dir,
                   const std::vector<El::BigFloat> &objectives,
                   const std::vector<El::BigFloat> &normalization,
                   const std::vector<Positive_Matrix_With_Prefactor> &matrices,
+			      std::vector<int> &matrices_valid_indices,
                   Timers &timers)
 {
   auto &objectives_timer(timers.add_and_start("write_output.objectives"));
@@ -48,11 +49,18 @@ void write_output(const boost::filesystem::path &output_dir,
   std::vector<Dual_Constraint_Group> dual_constraint_groups;
   int rank(El::mpi::Rank(El::mpi::COMM_WORLD)),
     num_procs(El::mpi::Size(El::mpi::COMM_WORLD));
+
+  /*
   std::vector<size_t> indices;
   for(size_t index = rank; index < matrices.size(); index += num_procs)
     {
       indices.push_back(index);
-    }
+    }*/
+
+  std::vector<size_t> indices;
+  for (auto index : matrices_valid_indices)
+	  indices.push_back(index);
+
   for(auto &index : indices)
     {
       auto &scalings_timer(timers.add_and_start(

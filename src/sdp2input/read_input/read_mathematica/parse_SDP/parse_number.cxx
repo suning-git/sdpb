@@ -4,6 +4,8 @@
 #include <vector>
 #include <string>
 
+#include <iostream>
+
 std::string parse_number(const char *begin, const char *end)
 {
   std::string cleaned_string;
@@ -28,5 +30,6 @@ std::string parse_number(const char *begin, const char *end)
             }
         }
     }
+
   return cleaned_string;
 }

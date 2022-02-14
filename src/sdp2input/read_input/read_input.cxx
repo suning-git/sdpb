@@ -11,29 +11,15 @@ void read_json(const boost::filesystem::path &input_path,
 void read_mathematica(const boost::filesystem::path &input_path,
                       std::vector<El::BigFloat> &objectives,
                       std::vector<El::BigFloat> &normalization,
-                      std::vector<Positive_Matrix_With_Prefactor> &matrices);
+                      std::vector<Positive_Matrix_With_Prefactor> &matrices,
+					  std::vector<int> &matrices_valid_indices);
 
 void read_input(const boost::filesystem::path &input_file,
                 std::vector<El::BigFloat> &objectives,
                 std::vector<El::BigFloat> &normalization,
-                std::vector<Positive_Matrix_With_Prefactor> &matrices)
+                std::vector<Positive_Matrix_With_Prefactor> &matrices,
+				std::vector<int> &matrices_valid_indices)
 {
-  if(input_file.extension() == ".nsv")
-    {
-      for(auto &filename : read_file_list(input_file))
-        {
-          if(!filename.empty())
-            {
-              read_input(filename, objectives, normalization, matrices);
-            }
-        }
-    }
-  else if(input_file.extension() == ".json")
-    {
-      read_json(input_file, objectives, normalization, matrices);
-    }
-  else
-    {
-      read_mathematica(input_file, objectives, normalization, matrices);
-    }
+	read_mathematica(input_file, objectives, normalization, matrices, matrices_valid_indices);
+	return;
 }

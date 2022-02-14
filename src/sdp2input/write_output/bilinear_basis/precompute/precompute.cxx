@@ -42,8 +42,13 @@ void precompute(
             }));
 
       Boost_Float integral_sum(0);
+
+	  //std::cout << "p=" << p << " base=" << base << "\n";
+
       Boost_Float integral_prefactor(-boost::math::expint(-p * log(base))
                                      * pow(base, p));
+
+	  //std::cout << "integral_prefactor end\n";
 
       integral_matrix.emplace_back();
       auto &integrals(integral_matrix.back());

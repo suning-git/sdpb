@@ -23,6 +23,12 @@ Boost_Float bilinear_form(
 std::vector<Polynomial> bilinear_basis(const Damped_Rational &damped_rational,
                                        const size_t &half_max_degree)
 {
+  //std::cout << "bilinear_basis begin : poles.empty()=" << damped_rational.poles.empty() << " (base == 1)=" << (damped_rational.base == 1) << "\n";
+
+  //std::cout << "poles={\n";
+  //for (auto & p : damped_rational.poles) std::cout << p << ",";
+  //std::cout << "}\n";
+
   // Exit early if damped_rational is a constant
   if(damped_rational.is_constant())
     {
@@ -31,6 +37,7 @@ std::vector<Polynomial> bilinear_basis(const Damped_Rational &damped_rational,
         1, El::BigFloat(to_string(1 / sqrt(damped_rational.constant))));
       return result;
     }
+  //std::cout << "bilinear_basis not constant\n";
 
   Polynomial polynomial(half_max_degree, 1);
 

@@ -18,8 +18,13 @@ inline void check_iterator(const char character, const char *begin,
 }
 
 const char *
+sb_parse_polynomial(const char *begin, const char *end, Polynomial &polynomial);
+
+const char *
 parse_polynomial(const char *begin, const char *end, Polynomial &polynomial)
 {
+  return sb_parse_polynomial(begin, end, polynomial);
+
   const std::vector<char> delimiters({',', '}'});
   const auto delimiter(
     std::find_first_of(begin, end, delimiters.begin(), delimiters.end()));

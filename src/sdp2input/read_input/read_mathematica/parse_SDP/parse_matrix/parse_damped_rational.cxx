@@ -9,6 +9,13 @@
 #include <iterator>
 #include <string>
 
+const char * sb_parse_damped_rational_constant(const char * constant_start, const char * end, Boost_Float & damped_rational_constant);
+
+inline Boost_Float as_BoostFloat(const El::BigFloat & ef)
+{
+	return Boost_Float(ef.gmp_float.get_mpf_t());
+}
+
 const char *parse_damped_rational(const char *begin, const char *end,
                                   Damped_Rational &damped_rational)
 {
@@ -50,7 +57,13 @@ const char *parse_damped_rational(const char *begin, const char *end,
       throw std::runtime_error("Missing comma after DampedRational.constant");
     }
   auto constant_start(std::next(damped_start, damped_literal.size()));
-  damped_rational.constant = Boost_Float(parse_number(constant_start, comma));
+
+  /////////////////  simpleboot hook begin /////////////////////////////
+
+  comma = sb_parse_damped_rational_constant(constant_start, end, damped_rational.constant);
+  //damped_rational.constant = Boost_Float(parse_number(constant_start, comma));
+
+  /////////////////  simpleboot hook end /////////////////////////////
 
   auto start_poles(std::next(comma));
   auto end_poles(parse_vector(start_poles, end, damped_rational.poles));
