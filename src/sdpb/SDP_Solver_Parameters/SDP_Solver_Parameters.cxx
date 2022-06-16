@@ -183,11 +183,13 @@ SDP_Solver_Parameters::SDP_Solver_Parameters(int argc, char *argv[])
       ->default_value(El::BigFloat("1e100", 10)),
     "Terminate if the complementarity mu = Tr(X Y)/dim(X) "
     "exceeds this value.");
-
+    
   solver_options.add_options()(
-	  "saveCheckpointAt",
-	  po::value<El::BigFloat>(&saveCheckpointAt),
-	  "finite difference for the derivatives");
+    "saveMiddleCheckpointMuThreshold",
+    po::value<El::BigFloat>(&save_mid_checkpoint_mu_threshold)
+      ->default_value(El::BigFloat("-1", 10)),
+    "Save middle checkpoint when mu meet the threshold.");
+    
 
   po::options_description cmd_line_options;
   cmd_line_options.add(required_options).add(basic_options).add(solver_options);
@@ -218,15 +220,6 @@ SDP_Solver_Parameters::SDP_Solver_Parameters(int argc, char *argv[])
         }
       else
         {
-		  if (variables_map.count("saveCheckpointAt") == 0)
-		  {
-			  saveCheckpointAtQ = false;
-		  }
-		  else
-		  {
-			  saveCheckpointAtQ = true;
-		  }
-
           if(variables_map.count("paramFile") != 0)
             {
               param_file

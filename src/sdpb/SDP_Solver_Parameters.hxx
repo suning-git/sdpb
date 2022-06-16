@@ -26,12 +26,11 @@ struct SDP_Solver_Parameters
     dual_error_threshold, initial_matrix_scale_primal,
     initial_matrix_scale_dual, feasible_centering_parameter,
     infeasible_centering_parameter, step_length_reduction, max_complementarity;
+    
+  El::BigFloat save_mid_checkpoint_mu_threshold;
 
   boost::filesystem::path sdp_directory, out_directory, checkpoint_in,
     checkpoint_out, param_file;
-
-  El::BigFloat saveCheckpointAt;
-  bool saveCheckpointAtQ;
 
   SDP_Solver_Parameters(int argc, char *argv[]);
   bool is_valid() const { return !sdp_directory.empty(); }

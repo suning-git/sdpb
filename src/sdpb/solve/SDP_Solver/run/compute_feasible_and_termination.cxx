@@ -2,7 +2,6 @@
 #include "../../../SDP_Solver_Parameters.hxx"
 
 void compute_feasible_and_termination(
-	const El::BigFloat &primal_objective, const El::BigFloat &dual_objective,
   const SDP_Solver_Parameters &parameters, const El::BigFloat &primal_error,
   const El::BigFloat &dual_error, const El::BigFloat &duality_gap,
   const El::BigFloat &primal_step_length, const El::BigFloat &dual_step_length,
@@ -16,7 +15,7 @@ void compute_feasible_and_termination(
     is_primal_feasible(primal_error < parameters.primal_error_threshold);
   is_primal_and_dual_feasible = (is_primal_feasible && is_dual_feasible);
 
-  const bool is_optimal(duality_gap<0.1 && duality_gap < parameters.duality_gap_threshold*Min(Abs(primal_objective), Abs(dual_objective)));
+  const bool is_optimal(duality_gap < parameters.duality_gap_threshold);
 
   terminate_now = true;
   if(is_primal_and_dual_feasible && is_optimal)
