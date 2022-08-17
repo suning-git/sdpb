@@ -3,7 +3,6 @@
 #include <El.hpp>
 
 #include <boost/filesystem.hpp>
-#include <boost/filesystem/fstream.hpp>
 
 inline void
 set_element(El::DistMatrix<El::BigFloat> &block, const int64_t &row,

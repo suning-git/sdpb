@@ -40,6 +40,15 @@ step_length(const Block_Diagonal_Matrix &MCholesky,
             const Block_Diagonal_Matrix &dM, const El::BigFloat &gamma,
             const std::string &timer_name, Timers &timers);
 
+
+void compute_beta_for_finiteMuTarget(const Solver_Parameters &parameters, El::BigFloat &mu, El::BigFloat& beta)
+{
+	//std::cout << "compute_beta_for_finiteMuTarget : "<< parameters.finiteMuTarget <<"\n";
+	if (parameters.finiteMuTarget <= 0)return;
+	El::BigFloat newbeta = parameters.finiteMuTarget / mu;
+	if (0.1 < newbeta)beta = newbeta;
+};
+
 void SDP_Solver::step(
   const Solver_Parameters &parameters, const std::size_t &total_psd_rows,
   const bool &is_primal_and_dual_feasible, const Block_Info &block_info,
@@ -109,6 +118,9 @@ void SDP_Solver::step(
     // Compute the predictor solution for (dx, dX, dy, dY)
     beta_predictor
       = predictor_centering_parameter(parameters, is_primal_and_dual_feasible);
+
+	compute_beta_for_finiteMuTarget(parameters, mu, beta_predictor);
+
     compute_search_direction(block_info, sdp, *this, schur_complement_cholesky,
                              schur_off_diagonal, X_cholesky, beta_predictor,
                              mu, primal_residue_p, false, Q, dx, dX, dy, dY);
@@ -120,6 +132,8 @@ void SDP_Solver::step(
     beta_corrector = corrector_centering_parameter(
       parameters, X, dX, Y, dY, mu, is_primal_and_dual_feasible,
       total_psd_rows);
+
+	compute_beta_for_finiteMuTarget(parameters, mu, beta_corrector);
 
     compute_search_direction(block_info, sdp, *this, schur_complement_cholesky,
                              schur_off_diagonal, X_cholesky, beta_corrector,

@@ -1,5 +1,3 @@
-#include <boost/filesystem/fstream.hpp>
-
 #include "../Boost_Float.hxx"
 #include "../sdp_convert.hxx"
 #include "../sdp_convert/write_vector.hxx"

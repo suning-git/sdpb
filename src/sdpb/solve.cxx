@@ -13,6 +13,9 @@ void save_solution(const SDP_Solver &solver, const SDP_Solver_Terminate_Reason,
                    const std::vector<size_t> &block_indices,
                    const Verbosity &verbosity);
 
+El::BigFloat compute_lag(const El::BigFloat mu, const Block_Diagonal_Matrix &X_cholesky, const SDP_Solver &solver);
+
+
 Timers solve(const Block_Info &block_info, const SDPB_Parameters &parameters)
 {
   El::Grid grid(block_info.mpi_comm.value);
@@ -38,6 +41,8 @@ Timers solve(const Block_Info &block_info, const SDPB_Parameters &parameters)
                 << "dualityGap      = " << solver.duality_gap << '\n'
                 << "primalError     = " << solver.primal_error() << '\n'
                 << "dualError       = " << solver.dual_error << '\n'
+				<< "RError          = " << solver.R_error << '\n'
+				<< "Lagrangian      = " << solver.lag << '\n'
                 << '\n';
     }
 

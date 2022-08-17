@@ -8,8 +8,8 @@ void print_header(const Verbosity &verbosity)
     {
       std::cout << "\n"
                 << "          time    mu     P-obj       D-obj      gap     "
-                   "    P-err       p-err       D-err      P-step   D-step   beta\n"
+                   "    P-err       p-err       D-err       R-err      P-step   D-step   beta\n"
                 << "--------------------------------------------------------"
-                   "-------------------------------------------------------------\n";
+                   "--------------------------------------------------------------\n";
     }
 }

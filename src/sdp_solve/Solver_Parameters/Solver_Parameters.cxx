@@ -138,5 +138,19 @@ boost::program_options::options_description Solver_Parameters::options()
     "Save checkpoints to checkpointDir every checkpointInterval "
     "seconds.");
 
+  result.add_options()(
+	  "finiteMuTarget",
+	  boost::program_options::value<El::BigFloat>(&finiteMuTarget)
+	  ->default_value(El::BigFloat("-1", 10)),
+	  "If this parameter is positive, sdpb will try to solve the SDP constraints"
+	  "with finite mu.");
+
+  result.add_options()(
+	  "finiteMuRThreshold",
+	  boost::program_options::value<El::BigFloat>(&finiteMuRThreshold)
+	  ->default_value(El::BigFloat("-1", 10)),
+	  "The solver will run to central path at finite mu until the largest element"
+	  "of R is smaller than finiteMuRThreshold.");
+
   return result;
 }

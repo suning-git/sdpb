@@ -23,6 +23,8 @@ struct Solver_Parameters
     infeasible_centering_parameter, step_length_reduction, max_complementarity,
     min_primal_step, min_dual_step;
 
+  El::BigFloat finiteMuTarget, finiteMuRThreshold;
+
   boost::filesystem::path checkpoint_in, checkpoint_out;
   Solver_Parameters() = default;
   boost::program_options::options_description options();

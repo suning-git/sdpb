@@ -43,6 +43,9 @@ void print_iteration(
                 << std::setw(11) << std::setprecision(3)
                 << static_cast<double>(sdp_solver.dual_error) << " "
 
+				<< std::setw(11) << std::setprecision(3)
+				<< static_cast<double>(sdp_solver.R_error) << " "
+
                 << std::noshowpos << std::setw(8) << std::setprecision(3)
                 << static_cast<double>(primal_step_length) << " "
 

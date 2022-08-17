@@ -3,7 +3,7 @@
 
 void compute_feasible_and_termination(
   const Solver_Parameters &parameters, const El::BigFloat &primal_error,
-  const El::BigFloat &dual_error, const El::BigFloat &duality_gap,
+  const El::BigFloat &dual_error, const El::BigFloat &R_error, const El::BigFloat &duality_gap,
   const El::BigFloat &primal_step_length, const El::BigFloat &dual_step_length,
   const int &iteration,
   const std::chrono::time_point<std::chrono::high_resolution_clock>
@@ -60,6 +60,10 @@ void compute_feasible_and_termination(
     {
       terminate_reason = SDP_Solver_Terminate_Reason::DualStepTooSmall;
     }
+  else if (iteration > 1 && R_error < parameters.finiteMuRThreshold)
+  {
+	  terminate_reason = SDP_Solver_Terminate_Reason::FiniteMuThresholdMeet;
+  }
   else
     {
       terminate_now = false;

@@ -31,7 +31,7 @@ void compute_bilinear_pairings(
 
 void compute_feasible_and_termination(
   const Solver_Parameters &parameters, const El::BigFloat &primal_error,
-  const El::BigFloat &dual_error, const El::BigFloat &duality_gap,
+  const El::BigFloat &dual_error, const El::BigFloat &R_error, const El::BigFloat &duality_gap,
   const El::BigFloat &primal_step_length, const El::BigFloat &dual_step_length,
   const int &iteration,
   const std::chrono::time_point<std::chrono::high_resolution_clock>
@@ -56,6 +56,10 @@ void compute_primal_residues_and_error_p_b_Bx(const Block_Info &block_info,
                                               const Block_Vector &x,
                                               Block_Vector &primal_residue_p,
                                               El::BigFloat &primal_error_p);
+
+void compute_R_error(const std::size_t &total_psd_rows, const Block_Diagonal_Matrix &X, const Block_Diagonal_Matrix &Y, El::BigFloat & R_error, Timers &timers);
+
+El::BigFloat compute_lag(const El::BigFloat mu, const Block_Diagonal_Matrix &X_cholesky, const SDP_Solver &solver);
 
 SDP_Solver_Terminate_Reason
 SDP_Solver::run(const Solver_Parameters &parameters,
@@ -147,9 +151,11 @@ SDP_Solver::run(const Solver_Parameters &parameters,
       compute_primal_residues_and_error_p_b_Bx(
         block_info, sdp, x, primal_residue_p, primal_error_p);
 
+	  compute_R_error(total_psd_rows, X, Y, R_error, timers);
+
       bool terminate_now, is_primal_and_dual_feasible;
       compute_feasible_and_termination(
-        parameters, primal_error(), dual_error, duality_gap,
+        parameters, primal_error(), dual_error, R_error, duality_gap,
         primal_step_length, dual_step_length, iteration,
         solver_timer.start_time, is_primal_and_dual_feasible, terminate_reason,
         terminate_now);
@@ -163,6 +169,9 @@ SDP_Solver::run(const Solver_Parameters &parameters,
            sdp, grid, X_cholesky, Y_cholesky, A_X_inv, A_Y, primal_residue_p,
            mu, beta_corrector, primal_step_length, dual_step_length,
            terminate_now, timers);
+	  
+	  lag = compute_lag(mu, X_cholesky, *this);
+
       if(terminate_now)
         {
           terminate_reason
