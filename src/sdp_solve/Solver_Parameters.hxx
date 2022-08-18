@@ -10,6 +10,9 @@
 
 #include <iostream>
 
+#include "./Write_Solution.hxx"
+#include "../Verbosity.hxx"
+
 struct Solver_Parameters
 {
   int64_t max_iterations, max_runtime, checkpoint_interval;
@@ -25,6 +28,9 @@ struct Solver_Parameters
 
   El::BigFloat finiteMuTarget, finiteMuRThreshold, save_mid_checkpoint_mu_threshold;
   bool printMore;
+
+  Write_Solution write_solution;
+  Verbosity verbosity;
 
   boost::filesystem::path checkpoint_in, checkpoint_out;
   Solver_Parameters() = default;

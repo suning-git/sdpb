@@ -187,4 +187,7 @@ SDPB_Parameters::SDPB_Parameters(int argc, char *argv[])
       El::ReportException(e);
       El::mpi::Abort(El::mpi::COMM_WORLD, 1);
     }
+
+  solver.write_solution = write_solution;
+  solver.verbosity = verbosity;
 }

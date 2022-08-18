@@ -1,5 +1,7 @@
 #include "../../SDP_Solver.hxx"
 
+#include "../../../sdpb/SDPB_Parameters.hxx"
+
 // The main solver loop
 
 void cholesky_decomposition(const Block_Diagonal_Matrix &A,
@@ -71,14 +73,22 @@ void compute_R_error(const std::size_t &total_psd_rows, const Block_Diagonal_Mat
 
 El::BigFloat compute_lag(const El::BigFloat mu, const Block_Diagonal_Matrix &X_cholesky, const SDP_Solver &solver);
 
+
+void save_solution(const SDP_Solver &solver, const SDP_Solver_Terminate_Reason,
+	const std::pair<std::string, Timer> &timer_pair,
+	const boost::filesystem::path &out_directory,
+	const Write_Solution &write_solution,
+	const std::vector<size_t> &block_indices,
+	const Verbosity &verbosity);
+
+
 SDP_Solver_Terminate_Reason
-SDP_Solver::run(const SDP_Parameters &sdp_parameters,
+SDP_Solver::run(const Solver_Parameters &parameters,
                 const Verbosity &verbosity,
                 const boost::property_tree::ptree &parameter_properties,
                 const Block_Info &block_info, const SDP &sdp,
                 const El::Grid &grid, Timers &timers)
 {
-  Solver_Parameters & parameters = sdp_parameters.solver;
   SDP_Solver_Terminate_Reason terminate_reason(
     SDP_Solver_Terminate_Reason::MaxIterationsExceeded);
 
@@ -221,8 +231,8 @@ SDP_Solver::run(const SDP_Parameters &sdp_parameters,
 			  create_directories(checkpoint_mid_out);
 		  }
 		   
-		  save_solution(SDP_Solver_Terminate_Reason::PrimalDualOptimal, timers.front(), checkpoint_mid_out,
-			  sdp_parameters.write_solution, block_info.block_indices, sdp_parameters.verbosity);
+		  save_solution(*this, SDP_Solver_Terminate_Reason::PrimalDualOptimal, timers.front(), checkpoint_mid_out,
+			  parameters.write_solution, block_info.block_indices, parameters.verbosity);
 
 		  const_cast<El::BigFloat&>(parameters.save_mid_checkpoint_mu_threshold) = -1;
 	  }
