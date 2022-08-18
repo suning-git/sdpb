@@ -72,14 +72,16 @@ void compute_R_error(const std::size_t &total_psd_rows, const Block_Diagonal_Mat
 El::BigFloat compute_lag(const El::BigFloat mu, const Block_Diagonal_Matrix &X_cholesky, const SDP_Solver &solver);
 
 SDP_Solver_Terminate_Reason
-SDP_Solver::run(const Solver_Parameters &parameters,
+SDP_Solver::run(const SDP_Parameters &sdp_parameters,
                 const Verbosity &verbosity,
                 const boost::property_tree::ptree &parameter_properties,
                 const Block_Info &block_info, const SDP &sdp,
                 const El::Grid &grid, Timers &timers)
 {
+  Solver_Parameters & parameters = sdp_parameters.solver;
   SDP_Solver_Terminate_Reason terminate_reason(
     SDP_Solver_Terminate_Reason::MaxIterationsExceeded);
+
   auto &solver_timer(timers.add_and_start("Solver runtime"));
   auto &initialize_timer(timers.add_and_start("run.initialize"));
 
@@ -211,16 +213,16 @@ SDP_Solver::run(const Solver_Parameters &parameters,
 
 		  checkpoint_mid_out += ".mid";
 
-		  if (parameters.verbosity >= Verbosity::regular && El::mpi::Rank() == 0)
+		  if (El::mpi::Rank() == 0)
 			  std::cout << "save mid checkpoint to " << checkpoint_mid_out << "\n";
 
 		  if (!exists(checkpoint_mid_out))
 		  {
 			  create_directories(checkpoint_mid_out);
 		  }
-
+		   
 		  save_solution(SDP_Solver_Terminate_Reason::PrimalDualOptimal, timers.front(), checkpoint_mid_out,
-			  parameters.write_solution, block_info.block_indices, parameters.verbosity);
+			  sdp_parameters.write_solution, block_info.block_indices, sdp_parameters.verbosity);
 
 		  const_cast<El::BigFloat&>(parameters.save_mid_checkpoint_mu_threshold) = -1;
 	  }

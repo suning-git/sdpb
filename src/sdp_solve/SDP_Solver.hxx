@@ -82,7 +82,7 @@ public:
              const size_t &dual_objective_b_height);
 
   SDP_Solver_Terminate_Reason
-  run(const Solver_Parameters &parameters,
+  run(const SDPB_Parameters &sdp_parameters,
       const Verbosity &verbosity,
       const boost::property_tree::ptree &parameter_properties,
       const Block_Info &block_info, const SDP &sdp, const El::Grid &grid,
