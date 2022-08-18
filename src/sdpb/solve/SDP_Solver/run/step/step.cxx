@@ -100,40 +100,40 @@ void SDP_Solver::step(const SDP_Solver_Parameters &parameters,
 		return;
 	}
 
-	auto &predictor_timer(
-		timers.add_and_start("run.step.computeSearchDirection(betaPredictor)"));
-
 
 	// find search direction
 	for (int stallrecovery_phase = 1; stallrecovery_phase <= 2; stallrecovery_phase++)
 	{
-		// Compute the predictor solution for (dx, dX, dy, dY)
-		beta_predictor
-			= predictor_centering_parameter(parameters, is_primal_and_dual_feasible);
-		compute_search_direction(block_info, sdp, *this, schur_complement_cholesky,
-			schur_off_diagonal, X_cholesky, beta_predictor,
-			mu, primal_residue_p, false, Q, dx, dX, dy, dY);
-		predictor_timer.stop();
-
-		// Compute the corrector solution for (dx, dX, dy, dY)
-		auto &corrector_timer(
-			timers.add_and_start("run.step.computeSearchDirection(betaCorrector)"));
-
-		if (stallrecovery_phase == 2)
+		if (stallrecovery_phase == 1)
 		{
-			beta_corrector = El::BigFloat(1e50);
-		}
-		else
-		{
+			auto &predictor_timer(
+				timers.add_and_start("run.step.computeSearchDirection(betaPredictor)"));
+			// Compute the predictor solution for (dx, dX, dy, dY)
+			beta_predictor
+				= predictor_centering_parameter(parameters, is_primal_and_dual_feasible);
+			compute_search_direction(block_info, sdp, *this, schur_complement_cholesky,
+				schur_off_diagonal, X_cholesky, beta_predictor,
+				mu, primal_residue_p, false, Q, dx, dX, dy, dY);
+			predictor_timer.stop();
+
+			// Compute the corrector solution for (dx, dX, dy, dY)
+			auto &corrector_timer(
+				timers.add_and_start("run.step.computeSearchDirection(betaCorrector)"));
 			beta_corrector = corrector_centering_parameter(
 				parameters, X, dX, Y, dY, mu, is_primal_and_dual_feasible,
 				total_psd_rows);
+			compute_search_direction(block_info, sdp, *this, schur_complement_cholesky,
+				schur_off_diagonal, X_cholesky, beta_corrector,
+				mu, primal_residue_p, true, Q, dx, dX, dy, dY);
+			corrector_timer.stop();
 		}
-
-		compute_search_direction(block_info, sdp, *this, schur_complement_cholesky,
-			schur_off_diagonal, X_cholesky, beta_corrector,
-			mu, primal_residue_p, true, Q, dx, dX, dy, dY);
-		corrector_timer.stop();
+		else
+		{
+			beta_corrector = El::BigFloat(1e50);
+			compute_search_direction(block_info, sdp, *this, schur_complement_cholesky,
+				schur_off_diagonal, X_cholesky, beta_predictor,
+				mu, primal_residue_p, false, Q, dx, dX, dy, dY);
+		}
 
 		// Compute step-lengths that preserve positive definiteness of X, Y
 		primal_step_length
