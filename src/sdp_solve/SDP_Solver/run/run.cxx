@@ -6,6 +6,8 @@ void cholesky_decomposition(const Block_Diagonal_Matrix &A,
                             Block_Diagonal_Matrix &L);
 
 void print_header(const Verbosity &verbosity);
+void print_header_new(const Verbosity &verbosity);
+
 void print_iteration(
   const int &iteration, const El::BigFloat &mu,
   const El::BigFloat &primal_step_length, const El::BigFloat &dual_step_length,
@@ -13,6 +15,14 @@ void print_iteration(
   const std::chrono::time_point<std::chrono::high_resolution_clock>
     &solver_start_time,
   const Verbosity &verbosity);
+
+void print_iteration_new(
+	const int &iteration, const El::BigFloat &mu,
+	const El::BigFloat &primal_step_length, const El::BigFloat &dual_step_length,
+	const El::BigFloat &beta_corrector, const SDP_Solver &sdp_solver,
+	const std::chrono::time_point<std::chrono::high_resolution_clock>
+	&solver_start_time,
+	const Verbosity &verbosity);
 
 void compute_objectives(const SDP &sdp, const Block_Vector &x,
                         const Block_Vector &y, El::BigFloat &primal_objective,
@@ -105,7 +115,11 @@ SDP_Solver::run(const Solver_Parameters &parameters,
   std::array<
     std::vector<std::vector<std::vector<El::DistMatrix<El::BigFloat>>>>, 2>
     A_Y;
-  print_header(verbosity);
+
+  if (parameters.printMore)
+	  print_header_new(verbosity);
+  else
+	  print_header(verbosity);
 
   auto psd_sizes(block_info.psd_matrix_block_sizes());
   std::size_t total_psd_rows(
@@ -170,7 +184,8 @@ SDP_Solver::run(const Solver_Parameters &parameters,
            mu, beta_corrector, primal_step_length, dual_step_length,
            terminate_now, timers);
 	  
-	  lag = compute_lag(mu, X_cholesky, *this);
+	  // compute Lagrangian only when finiteMuTarget is specified
+	  if (parameters.finiteMuTarget > 0)lag = compute_lag(mu, X_cholesky, *this);
 
       if(terminate_now)
         {
@@ -178,9 +193,38 @@ SDP_Solver::run(const Solver_Parameters &parameters,
             = SDP_Solver_Terminate_Reason::MaxComplementarityExceeded;
           break;
         }
-      print_iteration(iteration, mu, primal_step_length, dual_step_length,
-                      beta_corrector, *this, solver_timer.start_time,
-                      verbosity);
+
+	  if (parameters.printMore)
+		  print_iteration_new(iteration, mu, primal_step_length, dual_step_length,
+			  beta_corrector, *this, solver_timer.start_time,
+			  verbosity);
+	  else
+		  print_iteration(iteration, mu, primal_step_length, dual_step_length,
+			  beta_corrector, *this, solver_timer.start_time,
+			  verbosity);
+
+
+	  if (parameters.save_mid_checkpoint_mu_threshold > 0 && mu < parameters.save_mid_checkpoint_mu_threshold
+		  && Max(dual_step_length, primal_step_length) > 0.1 && iteration >= 10)
+	  {
+		  boost::filesystem::path checkpoint_mid_out = parameters.checkpoint_out;
+
+		  checkpoint_mid_out += ".mid";
+
+		  if (parameters.verbosity >= Verbosity::regular && El::mpi::Rank() == 0)
+			  std::cout << "save mid checkpoint to " << checkpoint_mid_out << "\n";
+
+		  if (!exists(checkpoint_mid_out))
+		  {
+			  create_directories(checkpoint_mid_out);
+		  }
+
+		  save_solution(SDP_Solver_Terminate_Reason::PrimalDualOptimal, timers.front(), checkpoint_mid_out,
+			  parameters.write_solution, block_info.block_indices, parameters.verbosity);
+
+		  const_cast<El::BigFloat&>(parameters.save_mid_checkpoint_mu_threshold) = -1;
+	  }
+
     }
   solver_timer.stop();
   return terminate_reason;

@@ -152,5 +152,17 @@ boost::program_options::options_description Solver_Parameters::options()
 	  "The solver will run to central path at finite mu until the largest element"
 	  "of R is smaller than finiteMuRThreshold.");
 
+  result.add_options()(
+	  "saveMiddleCheckpointMuThreshold",
+	  boost::program_options::value<El::BigFloat>(&save_mid_checkpoint_mu_threshold)
+	  ->default_value(El::BigFloat("-1", 10)),
+	  "Save middle checkpoint when mu meet the threshold.");
+
+  result.add_options()(
+	  "printMore",
+	  boost::program_options::bool_switch(&printMore)
+	  ->default_value(false),
+	  "Print R error for each iteration");
+
   return result;
 }
