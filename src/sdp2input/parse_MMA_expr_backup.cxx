@@ -56,15 +56,6 @@ inline Boost_Float as_BoostFloat(const El::BigFloat & ef)
 }
 
 
-inline Boost_Float Pochhammer(const Boost_Float &alpha, const int64_t &n)
-{
-	Boost_Float result(1);
-	for (int64_t kk = 0; kk < n; ++kk)
-	{
-		result *= alpha + kk;
-	}
-	return result;
-}
 
 ////////////////////////////////////////   parse Mathematica expression //////////////////////////////////////
 
@@ -915,7 +906,6 @@ inline mpz_class binomial_coeff_cached(int m, int n)
 
 void interval_transformation(std::vector<El::BigFloat> & coeff, const El::BigFloat & a, const El::BigFloat & b, int max_degree)
 {
-
 	int N = coeff.size()-1; // degree of the polynomial
 	int M = max_degree; // maximum degree of the polynomials in current matrix
 
@@ -944,12 +934,7 @@ void interval_transformation(std::vector<El::BigFloat> & coeff, const El::BigFlo
 
 ////////////////////////////////////////////////////////////////////////////////////
 
-// 2022/5/27 : Note on parallization : for objective and normalization, the before call parse_vector, the param::MPI_F_FS_parallelQ is set to be true
-// so that parse_vector is parallized. The parallelization scheme is the following : the vector contains many symbols (F,FS,P,PT,F0, ...), but has no constant
-// Each MPI process will parse a set of symbols and skip other symbols (i.e. set them to 0). Then the final result is collected using mpi_allreduce
-// For positivity condition matrices, the parallelization scheme is that each MPI process handle a entire matrix. So when process symbols, 
-// the param::MPI_F_FS_parallelQ is set to false. Because the polynomial will never appear in objective/ normalization, therefore the symbol P, PT don't have
-// param::MPI_F_FS_parallelQ type of parallelization
+
 
 El::BigFloat Fprefactor(int L, const El::BigFloat & x)
 {
@@ -1015,22 +1000,6 @@ inline auto & blockF_lookup(const std::string & stamp, int L, int m, int n)
 		MMA_PARSER_ERROR("can't find polynomial for stamp=" << stamp << " L=" << L << " m=" << m << " n=" << n << "\n");
 
 	return pblock->second.at(m).at(n);
-}
-
-// (-1)^(m + n)*2^(1 + m + n - 2*x)*Poch[1 - m + x, m]*Poch[1 - n + x, n]
-inline void simpleboot_internal_F0(El::BigFloat & x, int m, int n, MMA_ELEMENT & result)
-{
-	if (param::MPI_F_FS_parallelQ == true && El::mpi::Rank() != 0)
-	{
-		result = El::BigFloat(0);
-		return;
-	}
-
-	Boost_Float BF_x = as_BoostFloat(x);
-	Boost_Float BF_result = pow(2, 1 + m + n - 2 * BF_x) * Pochhammer(1 - m + BF_x, m)*Pochhammer(1 - n + BF_x, n);
-	if ((m + n) % 2 != 0) BF_result *= -1;
-
-	result = as_BigFloat(BF_result);
 }
 
 
@@ -1214,29 +1183,6 @@ const char * parse_MMA_function(const std::string & name, const char * begin, co
 		pstr = parse_MMA_check_op(pstr, end, token, ']');
 
 		simpleboot_internal_PT(stamp, L, m, n, a, b, result);
-
-		return pstr;
-	}
-
-
-	if (name.compare("F0") == 0)// F0[x, m, n]
-	{
-		MMA_TOKEN token;
-		MMA_ELEMENT element;
-
-		int L, m, n, kappa;
-		El::BigFloat x;
-
-		pstr = parse_MMA_expr_as_number(pstr, end, x);
-		pstr = parse_MMA_check_op(pstr, end, token, ',');
-
-		pstr = parse_MMA_token_as_int(pstr, end, token, m);
-		pstr = parse_MMA_check_op(pstr, end, token, ',');
-
-		pstr = parse_MMA_token_as_int(pstr, end, token, n);
-		pstr = parse_MMA_check_op(pstr, end, token, ']');
-
-		simpleboot_internal_F0(x, m, n, result);
 
 		return pstr;
 	}
