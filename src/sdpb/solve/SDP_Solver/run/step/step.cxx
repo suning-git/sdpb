@@ -129,7 +129,7 @@ void SDP_Solver::step(const SDP_Solver_Parameters &parameters,
 		}
 		else
 		{
-			beta_corrector = El::BigFloat(1e50);
+			beta_predictor = beta_corrector = El::BigFloat(1e50);
 			compute_search_direction(block_info, sdp, *this, schur_complement_cholesky,
 				schur_off_diagonal, X_cholesky, beta_predictor,
 				mu, primal_residue_p, false, Q, dx, dX, dy, dY);
