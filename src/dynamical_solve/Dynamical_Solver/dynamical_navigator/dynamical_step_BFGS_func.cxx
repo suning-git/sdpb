@@ -1305,7 +1305,7 @@ El::BigFloat Dynamical_Solver::finite_mu_navigator(
 	El::BigFloat lag_shifted = lag;
 	lag_shifted -= total_psd_rows * mu * dynamical_parameters.lagrangian_muI_shift;
 
-	return lag_shifted;
+	return lag_shifted + dynamical_parameters.navigatorValueShift;
 }
 
 

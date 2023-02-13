@@ -573,10 +573,12 @@ void Dynamical_Solver::dynamical_step(
 	El::Matrix<El::BigFloat> grad_corrected(n_external_parameters, 1);
 
 	El::Matrix<El::BigFloat> hess_mixed(n_external_parameters, n_external_parameters); //H_px H^-1_xx H_xp in Eq(13).
-	El::Matrix<El::BigFloat> grad_mixed(n_external_parameters, 1); //H_px (-internal_dx_dy) = H_px (H^-1_xx Del_x L_mu) in Eq (13).  
+	//El::Matrix<El::BigFloat> grad_mixed(n_external_parameters, 1); //H_px (-internal_dx_dy) = H_px (H^-1_xx Del_x L_mu) in Eq (13).  
 
 	El::Matrix<El::BigFloat> prev_grad(n_external_parameters, 1), prev_step(n_external_parameters, 1), prev_BFGS(n_external_parameters, n_external_parameters);
 	El::Zeros(hess_Exact, n_external_parameters, n_external_parameters);
+	El::Zeros(grad_mixed, n_external_parameters, 1);
+
 	read_prev_grad_step_hess(dynamical_parameters, prev_grad, prev_step, prev_BFGS);
 
 	read_sdp_grid(dynamical_parameters, block_info, sdp, grid, timers,
