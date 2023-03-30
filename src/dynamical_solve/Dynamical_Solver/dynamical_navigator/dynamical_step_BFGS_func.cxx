@@ -311,15 +311,10 @@ void read_sdp_grid(
 	El::Matrix<El::BigFloat> & grad_withlog,
 
 	std::vector<std::pair<Block_Vector, Block_Vector>> & H_xp,
-	std::vector<std::pair<Block_Vector, Block_Vector>> & Delta_xy,
-        std::vector<SDP> & eplus_d_sdp)
+	std::vector<std::pair<Block_Vector, Block_Vector>> & Delta_xy)
 {
 	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
-        if (! eplus_d_sdp.empty()){
-          eplus_d_sdp.clear();
-        } 
- 
 	El::Zero(eplus);
 	El::Zero(eminus);
 	El::Zero(esum);
@@ -380,7 +375,6 @@ void read_sdp_grid(
 					<< '\n' << std::flush;
 
 				Lpu(dir_index1) = approx_obj.Lag_pu / dynamical_parameters.alpha;
-                                eplus_d_sdp.emplace_back(d_sdp);
 			}
 			else if (dir_str == "minus")
 			{
@@ -552,25 +546,11 @@ bool BFGS_update_hessian(
 	const El::Matrix<El::BigFloat> &grad_p_diff,
 	const El::Matrix<El::BigFloat> &last_it_step,
 	El::Matrix<El::BigFloat> &hess_bfgs,
-        El::Matrix<El::BigFloat> &hess_bfgs_pp,
-        El::Matrix<El::BigFloat> &hess_mix,
-	bool update_only_when_positive, 
-        bool BFGS_approximate_Hpp_only)
+	bool update_only_when_positive)
 {
 	El::Matrix<El::BigFloat> hess_bfgs_save(hess_bfgs);
-       
-        if (BFGS_approximate_Hpp_only) {
-           if (El::mpi::Rank() == 0)
-              std::cout << "Use BFGS to update Hpp only"<<  "\n" << std::flush;; 
-	   BFGS_update_hessian(hess_bfgs.Width(), grad_p_diff, last_it_step, hess_bfgs_pp);
-           hess_bfgs = hess_bfgs_pp;
-           hess_bfgs -= hess_mix;
-        }
-        else{
-           if (El::mpi::Rank() == 0)
-              std::cout << "Use BFGS to update Htotal" <<  "\n" << std::flush;
-           BFGS_update_hessian(hess_bfgs.Width(), grad_p_diff, last_it_step, hess_bfgs);
-        }
+
+	BFGS_update_hessian(hess_bfgs.Width(), grad_p_diff, last_it_step, hess_bfgs);
 
 	bool flippedQ = positivitize_matrix(hess_bfgs);
 
@@ -598,28 +578,6 @@ void external_grad(const El::Matrix<El::BigFloat> &ePlus,
 	grad *= El::BigFloat(1) / alpha;
 }
 
-void update_grad_p(const Block_Vector & x, 
-                   const Block_Vector & y, 
-                   const std::vector<SDP> & eplus_delta_sdp, 
-                   const SDP & sdp,
-                   const int & n_external_parameters,
-                   El::Matrix<El::BigFloat> & grad_p)
-{
-     for (int i = 0; i < n_external_parameters; i++){
-       Approx_Objective approx_obj(sdp, eplus_delta_sdp[i],x, y);
-       grad_p(i) = approx_obj.d_objective; 
-     }  
-}
-
-
-update_Lpu(const Block_Info &block_info,
-           const SDP &sdp, 
-           const Block_Vector & internal_dx,
-           const Block_Diagonal_Matrix &X_cholesky,
-           const BigF
-{
-
-}
 
 extern bool compute_ext_step_only_once;
 extern bool recompute_ext_during_re_aiming;
@@ -627,7 +585,6 @@ extern bool recompute_ext_during_re_aiming;
 extern int max_climbing;
 
 extern bool update_hess_only_positive;
-extern bool BFGS_approximate_Hpp_only;
 
 extern bool use_Lpu_mu_correction;
 
@@ -674,9 +631,7 @@ void compute_grad_p_grad_mixed_Hpp_Hmixed(const Dynamical_Solver_Parameters &dyn
 		{
 			grad_p = grad_withlog;
 			external_grad(eplus, eminus, dynamical_parameters.alpha, grad_p);
-			if (El::mpi::Rank() == 0){
-                           std::cout << "the gradient N_p is computed with mu*log(detX) term. grad_p=";
-                        }
+			if (El::mpi::Rank() == 0)std::cout << "the gradient N_p is computed with mu*log(detX) term. grad_p=";
 		}
 		print_vector(grad_p);
 		if (El::mpi::Rank() == 0)std::cout << "\n";
@@ -707,12 +662,6 @@ void compute_grad_p_grad_mixed_Hpp_Hmixed(const Dynamical_Solver_Parameters &dyn
 	{
 		grad_corrected = Lpu;
 		grad_corrected *= -mu;
-                if (El::mpi::Rank() == 0) {
-                  std::cout << "\nLpu corrected : \n";
-                  print_vector(grad_corrected);
-                  std::cout << "\ngrad mixed : \n";
-                  print_vector(grad_mixed);
-                }
 		grad_corrected += grad_p;
 	}
 	else
@@ -720,15 +669,10 @@ void compute_grad_p_grad_mixed_Hpp_Hmixed(const Dynamical_Solver_Parameters &dyn
 		grad_corrected = grad_mixed;
 		grad_corrected += grad_p;
 	}
-
 }
 
-
 void read_prev_grad_step_hess(const Dynamical_Solver_Parameters &dynamical_parameters,
-	El::Matrix<El::BigFloat> & prev_grad, 
-        El::Matrix<El::BigFloat> & prev_step, 
-        El::Matrix<El::BigFloat> & prev_BFGS, 
-        El::Matrix<El::BigFloat> & prev_BFGS_pp )
+	El::Matrix<El::BigFloat> & prev_grad, El::Matrix<El::BigFloat> & prev_step, El::Matrix<El::BigFloat> & prev_BFGS)
 {
 	int dim_ext_p = dynamical_parameters.n_external_parameters;
 
@@ -745,14 +689,6 @@ void read_prev_grad_step_hess(const Dynamical_Solver_Parameters &dynamical_param
 			prev_BFGS(i, j) = dynamical_parameters.hess_BFGS[i * dim_ext_p + j];
 		}
 	}
-
-	for (int i = 0; i < dim_ext_p; i++)
-	{
-		for (int j = 0; j < dim_ext_p; j++)
-		{
-			prev_BFGS_pp(i, j) = dynamical_parameters.hess_BFGS_pp[i * dim_ext_p + j];
-		}
-        }	
 }
 
 
@@ -1127,11 +1063,7 @@ void Dynamical_Solver::internal_step_corrector_iteration_centering(
 			timers);
 
 		if (El::mpi::Rank() == 0) std::cout 
-			<< "R=" << error_R
-                        //<< " d=" << error_d
-                        //<< " p=" << error_p
-                        //<< " P=" << error_P 
-                        << " mu=" << coit_mu << "\n" << std::flush;
+			<< "R=" << error_R << " mu=" << coit_mu << "\n" << std::flush;
 
 		// decide if we want to stop the corrector iteration
 		if (error_R > error_R_last)break;
@@ -1261,8 +1193,8 @@ void Dynamical_Solver::strategy_hess_BFGS(const Dynamical_Solver_Parameters &dyn
 	El::Matrix<El::BigFloat> & grad_p, El::Matrix<El::BigFloat> & grad_mixed, El::Matrix<El::BigFloat> & grad_corrected,
 	El::Matrix<El::BigFloat> & Lpu, El::BigFloat & mu,
 	El::Matrix<El::BigFloat> & hess_pp, El::Matrix<El::BigFloat> & hess_mixed, El::Matrix<El::BigFloat> & hess_Exact,
-	El::Matrix<El::BigFloat> & prev_BFGS, El::Matrix<El::BigFloat> & prev_BFGS_pp,
-        El::Matrix<El::BigFloat> & prev_step, El::Matrix<El::BigFloat> & prev_grad,
+
+	El::Matrix<El::BigFloat> & prev_BFGS, El::Matrix<El::BigFloat> & prev_step, El::Matrix<El::BigFloat> & prev_grad,
 	El::Matrix<El::BigFloat> & hess_BFGS_lowest_mu
 )
 {
@@ -1270,9 +1202,8 @@ void Dynamical_Solver::strategy_hess_BFGS(const Dynamical_Solver_Parameters &dyn
 	{
 		if (positivitize_matrix(hess_Exact) == false)
 			if (El::mpi::Rank() == 0) std::cout << "flip the sign of hessian\n" << std::flush;
-                hess_BFGS = hess_Exact;
-		//El::Zero(hess_BFGS) ;
-                // hess_BFGS_pp = hess_Exact;
+
+		hess_BFGS = hess_Exact;
 	}
 	else
 	{
@@ -1281,15 +1212,13 @@ void Dynamical_Solver::strategy_hess_BFGS(const Dynamical_Solver_Parameters &dyn
 		if (dynamical_parameters.use_Hmixed_for_BFGS) // I will let simpleboot control whether hess_mixed will be used for hess_BFGS
 		{
 			El::Zeros(hess_BFGS, n_external_parameters, n_external_parameters);
-                        hess_BFGS_pp = hess_BFGS; 
- 			hess_BFGS -= hess_mixed;
+			hess_BFGS -= hess_mixed;
 			positivitize_matrix(hess_BFGS);
 			hess_BFGS *= El::BigFloat(rescale_initial_hess);
 		}
 		else
 		{
 			hess_BFGS = prev_BFGS;
-                        hess_BFGS_pp = prev_BFGS_pp;
 		}
 
 		if (lowest_mu_Q == false) hess_BFGS = hess_BFGS_lowest_mu;
@@ -1315,7 +1244,7 @@ void Dynamical_Solver::strategy_hess_BFGS(const Dynamical_Solver_Parameters &dyn
 			}
 			else
 			{
-				bool flippedQ = BFGS_update_hessian(grad_diff, prev_step, hess_BFGS, hess_BFGS_pp, hess_mixed, update_hess_only_positive, BFGS_approximate_Hpp_only);
+				bool flippedQ = BFGS_update_hessian(grad_diff, prev_step, hess_BFGS, update_hess_only_positive);
 				if (flippedQ)
 					if (update_hess_only_positive)
 					{
@@ -1477,7 +1406,7 @@ void Dynamical_Solver::strategy_update_grad_BFGS(
 	El::Matrix<El::BigFloat> & grad_p, El::Matrix<El::BigFloat> & grad_mixed, El::Matrix<El::BigFloat> & grad_BFGS
 )
 {
-	if (compare_BFGS_gradient_at_same_mu && (!BFGS_approximate_Hpp_only) )
+	if (compare_BFGS_gradient_at_same_mu)
 	{
 		extrapolate_gradient_as_target_mu(primal_step_length, primal_step_length, grad_p, grad_mixed, grad_BFGS);
 		if (El::mpi::Rank() == 0)
@@ -1490,12 +1419,6 @@ void Dynamical_Solver::strategy_update_grad_BFGS(
 	else if (use_gradp_for_BFGS_update)
 	{
 		grad_BFGS = grad_p;
-                if (El::mpi::Rank() == 0)
-                {
-                        std::cout << "use_gradp_for_BFGS_update: grad_BFGS : ";
-                        print_vector(grad_BFGS);
-                        std::cout << "\n";
-                }
 	}
 	else
 	{
