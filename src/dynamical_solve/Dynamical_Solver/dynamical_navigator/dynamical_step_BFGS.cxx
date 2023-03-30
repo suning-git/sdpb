@@ -221,8 +221,7 @@ void read_sdp_grid(
 	El::Matrix<El::BigFloat> & grad_withlog,
 
 	std::vector<std::pair<Block_Vector, Block_Vector>> & H_xp,
-	std::vector<std::pair<Block_Vector, Block_Vector>> & Delta_xy,
-        std::vector<SDP> & eplus_d_sdp);
+	std::vector<std::pair<Block_Vector, Block_Vector>> & Delta_xy);
 
 
 void compute_ellipse_boundary(const El::Matrix<El::BigFloat> &H,
@@ -245,18 +244,9 @@ bool BFGS_partial_update_hessian(const El::BigFloat & reduction_factor,
 	const El::Matrix<El::BigFloat> &s,
 	El::Matrix<El::BigFloat> &B);
 
-void update_grad_p(const Block_Vector & x,
-                   const Block_Vector & y,
-                   const std::vector<SDP> & eplus_delta_sdp,
-                   const SDP & sdp,
-                   const int & n_external_parameters,
-                   El::Matrix<El::BigFloat> & grad_p);
 
 void read_prev_grad_step_hess(const Dynamical_Solver_Parameters &dynamical_parameters,
-        El::Matrix<El::BigFloat> & prev_grad,
-        El::Matrix<El::BigFloat> & prev_step,
-        El::Matrix<El::BigFloat> & prev_BFGS,
-        El::Matrix<El::BigFloat> & prev_BFGS_pp );
+	El::Matrix<El::BigFloat> & prev_grad, El::Matrix<El::BigFloat> & prev_step, El::Matrix<El::BigFloat> & prev_BFGS);
 
 
 void compute_grad_p_grad_mixed_Hpp_Hmixed(const Dynamical_Solver_Parameters &dynamical_parameters,
@@ -398,7 +388,7 @@ bool recompute_ext_during_re_aiming = true;  // if true, ext-step will be recomp
 
 bool update_hess_only_positive = true;
 
-bool use_Lpu_mu_correction = true;
+bool use_Lpu_mu_correction = false;
 
 double dgap_near_optimal_threshold = 1e-20;
 
@@ -408,8 +398,8 @@ double rescale_initial_hess = 1;
 
 //double BFGS_partial_update_reduction = -1; // if positive, hessian will be updated always positive based on the partial update logic.
 
-bool compare_BFGS_gradient_at_same_mu = false;
-bool BFGS_approximate_Hpp_only = true;
+bool compare_BFGS_gradient_at_same_mu = true;
+
 //double beta_for_mu_logdetX = 0; // if negative, it will use the beta from beta scan
 //double beta_for_mu_logdetX = -1;
 
@@ -465,7 +455,6 @@ void Dynamical_Solver::dynamical_step(
 	El::BigFloat &dual_step_length, bool &terminate_now, Timers &timers,
 	bool &update_sdp, bool &find_zeros, El::Matrix<El::BigFloat> &external_step)
 {
-        if (El::mpi::Rank() == 0) std::cout << "start of step" << "\n";
 	auto &step_timer(timers.add_and_start("run.step"));
 	step_timer.stop();
 
@@ -483,19 +472,18 @@ void Dynamical_Solver::dynamical_step(
 	Block_Diagonal_Matrix schur_complement_cholesky(
 		block_info.schur_block_sizes(), block_info.block_indices,
 		block_info.num_points.size(), grid);
-        if (El::mpi::Rank() == 0) std::cout << "FINISH schur_complement_cholesky" << "\n";
+
 	Block_Matrix schur_off_diagonal(sdp.free_var_matrix);
-        if (El::mpi::Rank() == 0) std::cout << "schur_off_diagonal" << "\n";
+
 	El::DistMatrix<El::BigFloat> Q(sdp.dual_objective_b.Height(),
 		sdp.dual_objective_b.Height());
-        if (El::mpi::Rank() == 0) std::cout << "Initialize Q" << "\n";
+
 	if (!(dynamical_parameters.external_corrector_Q && external_corrector_jump_to_newSDP))
 	{
-                if (El::mpi::Rank() == 0) std::cout << "after external_corrector_Q" << "\n";
 		initialize_schur_complement_solver(block_info, sdp, A_X_inv, A_Y, grid,
 			schur_complement_cholesky, schur_off_diagonal, Q, timers);
 	}
-        if (El::mpi::Rank() == 0) std::cout << "after initialize_schur_complement_solver" << "\n";
+
 	auto &frobenius_timer(
 		timers.add_and_start("run.step.frobenius_product_symmetric"));
 	El::BigFloat dGap_current = frobenius_product_symmetric(X, Y);
@@ -570,11 +558,6 @@ void Dynamical_Solver::dynamical_step(
 		<< " bool1=" << (El::Abs(dynamical_parameters.finite_dGap_target - dGap_current) > dynamical_parameters.centeringRThreshold)
 		<< " bool2=" << (dynamical_parameters.centeringRThreshold > 0 && R_error > dynamical_parameters.centeringRThreshold)
 		<< "\n";
-
-        //std::vector<SDP> eplus_delta_sdp;
-        //read_sdp_grid(dynamical_parameters, block_info, sdp, grid, timers,
-        //        schur_complement_cholesky, schur_off_diagonal, Q, x, y, X_cholesky, n_external_parameters,
-        //        eplus, eminus, esum, Lpu, grad_withoutlog, grad_withlog, H_xp, Delta_xy,eplus_delta_sdp);
 
 	// move the solver to finite_dGap_target
 	if (dynamical_parameters.finite_dGap_target > 0 &&
@@ -657,119 +640,61 @@ void Dynamical_Solver::dynamical_step(
 	El::Matrix<El::BigFloat> hess_mixed(n_external_parameters, n_external_parameters); //H_px H^-1_xx H_xp in Eq(13).
 	//El::Matrix<El::BigFloat> grad_mixed(n_external_parameters, 1); //H_px (-internal_dx_dy) = H_px (H^-1_xx Del_x L_mu) in Eq (13).  
 
-	El::Matrix<El::BigFloat> prev_grad(n_external_parameters, 1), prev_step(n_external_parameters, 1), prev_BFGS(n_external_parameters, n_external_parameters) , prev_BFGS_pp(n_external_parameters, n_external_parameters);
+	El::Matrix<El::BigFloat> prev_grad(n_external_parameters, 1), prev_step(n_external_parameters, 1), prev_BFGS(n_external_parameters, n_external_parameters);
 	El::Zeros(hess_Exact, n_external_parameters, n_external_parameters);
-  El::Zeros(grad_mixed, n_external_parameters, 1);
-  
+	El::Zeros(grad_mixed, n_external_parameters, 1);
 
-	read_prev_grad_step_hess(dynamical_parameters, prev_grad, prev_step, prev_BFGS, prev_BFGS_pp);
+	read_prev_grad_step_hess(dynamical_parameters, prev_grad, prev_step, prev_BFGS);
 
-
-
-  std::vector<SDP> eplus_delta_sdp;
 	read_sdp_grid(dynamical_parameters, block_info, sdp, grid, timers,
 		schur_complement_cholesky, schur_off_diagonal, Q, x, y, X_cholesky, n_external_parameters,
-		eplus, eminus, esum, Lpu, grad_withoutlog, grad_withlog, H_xp, Delta_xy,eplus_delta_sdp);
+		eplus, eminus, esum, Lpu, grad_withoutlog, grad_withlog, H_xp, Delta_xy);
 
+	if (El::mpi::Rank() == 0)
+	{
+		std::cout << "eplus[0]=" << eplus(0)
+			<< " grad_withoutlog=" << grad_withoutlog(0)
+			<< "\n";
 
-	if (El::mpi::Rank() == 0)std::cout << "eplus[0]=" << eplus(0) 
-		<< " grad_withoutlog=" << grad_withoutlog(0)
-		<< " Lpu(0)=" << Lpu(0) 
-		<< "\n";
+		std::cout << "Lpu = ";
+		print_vector(Lpu);
+		std::cout << "\n";
+	}
+
+	El::BigFloat bisect_beta_begin, bisect_beta_end;
+	El::BigFloat optimal_step_min = 0.6, optimal_step_max = 0.7;
+	beta_scan_recorder.empty();
+	int i = 0;
 
 	// beta scan
-	for (beta = beta_scan_begin_El; beta <= beta_scan_end_El; beta += beta_scan_step_El)
+	beta = beta_scan_begin_El;
+	bool stall_on_GCP = false;
+	while (true)
 	{
-		internal_predictor_direction_dxdydXdY(block_info, sdp, *this, schur_complement_cholesky,
-			schur_off_diagonal, X_cholesky, beta,
-			mu, primal_residue_p, Q, grad_x, grad_y, internal_dx, internal_dy, dX, dY, R);
-		internal_corrector_direction(block_info, sdp, *this, schur_complement_cholesky,
-			schur_off_diagonal, X_cholesky, beta,
-			mu, primal_residue_p, Q, grad_x, grad_y, internal_dx, internal_dy, dX, dY, R);
-                update_Lpu(block_info, sdp, internal_dx, X_cholesky);
-		// compute various variables according to the formula
-                // grad_corrected = grad_p (grad_withoutlog or grad_withlog) 
-                //                  - mu Lpu  (option 1)
-                //                  + grad_mixed (option 2) 
-                // Lpu = d(Log det X)/dp, To be chekced: grad_mixed - (- mu Lpu) ~ O(R) 
-                // options decided by use_Lpu_mu_correction (false by default) 
-                // grad_withoutlog = dc.x + c.dx 
-                // grad_withlog    = db.y + dc.x + x.dB.y
-                // decided by dynamical_parameters.gradientWithLogDetX
-		compute_grad_p_grad_mixed_Hpp_Hmixed(dynamical_parameters,
+		i++;
+
+		if (El::mpi::Rank() == 0) std::cout << "i : " << i << "\n" << std::flush;
+
+		// loop control
+		if (beta > beta_scan_end_El)break;
+
+		dynamical_step_scan_beta(dynamical_parameters,
 			eplus, eminus, esum, H_xp, Delta_xy, internal_dx, internal_dy,
 			grad_withoutlog, grad_withlog, grad_p, grad_mixed, grad_corrected,
-			Lpu, mu, hess_pp, hess_mixed, hess_Exact);
-                //El::Zero(hess_BFGS_pp); 
-                hess_BFGS_pp = hess_Exact; 
-                if (dynamical_parameters.use_exact_hessian){
-                   hess_BFGS_pp = hess_pp;  
-                 }    
-		// decide hess_BFGS
-                // grad_diff = grad_p (option 1)
-                //           = grad_corrected (option 2)
-                // decided by use_gradp_for_BFGS_update (true by default)
-                // hess_BFGS (grad_p) ~ hess_BFGS (grad_corrected)   
-                // H_pp - H_px H_xx^-1 H_xp ~ 
-                // grad_diff = grad_p(i+1) + 0 - (grad_p(i) + step_length grad_mixed(i)) 
-                // Assuming R = 0, grad_diff = grad_p(i+1) + 0 - (grad_p(i) + step_length * mu Lpu ) 
-		strategy_hess_BFGS(dynamical_parameters, n_external_parameters,
-			lowest_mu_Q, grad_p, grad_mixed, grad_corrected,
 			Lpu, mu, hess_pp, hess_mixed, hess_Exact,
-			prev_BFGS,prev_BFGS_pp, prev_step, prev_grad, hess_BFGS_lowest_mu);
 
-		// compute external step
-		if (dynamical_parameters.find_boundary && dynamical_parameters.total_iterations > 0)
-		{
-			strategy_findboundary_extstep(block_info, X_cholesky, total_psd_rows, mu, beta,
-				n_external_parameters, dynamical_parameters, lowest_mu_Q,
-				grad_corrected, grad_p, grad_mixed,
-				external_step, external_step_save, external_step_specified_Q);
-		}
-		else
-		{
-			findMinimumQ = true;
-			// this is not used in minimization mode. we should compute lag_shifted only in "debug" mode
-			lag_shifted = finite_mu_navigator(block_info, X_cholesky, total_psd_rows, mu, beta, dynamical_parameters);
+			total_psd_rows, block_info, sdp, grid,
+			X_cholesky, Y_cholesky, timers,
+			schur_complement_cholesky, schur_off_diagonal, Q,
+			dx, dy, dX, dY, R, grad_x, grad_y,
+			primal_residue_p, is_primal_and_dual_feasible,
+			beta, primal_step_length, dual_step_length, step_length_reduction,
 
-			external_step = grad_corrected;
-			external_step *= (-1);
-			El::LinearSolve(hess_BFGS, external_step);
-
-			if (El::mpi::Rank() == 0)
-			{
-				std::cout << "Hessian Mixed =\n";
-				print_matrix(hess_mixed);
-				std::cout << "ext-step=";
-				print_vector(external_step);
-                                std::cout << "grad_corrected= ";
-                                print_vector(grad_corrected);
-			}
-		}
-
-		// compute dx,dy,dX,dY for external_step
-		compute_external_dxdydXdY(is_primal_and_dual_feasible,
-			dynamical_parameters, block_info, sdp, grid, X_cholesky, Y_cholesky, timers,
-			internal_dx, internal_dy, dx, dy, dX, dY, R,
-			external_step, Delta_xy, primal_step_length, dual_step_length, step_length_reduction);
-
-		// save the best beta
-		if (beta == beta_scan_begin_El ||
-			El::Max(primal_step_length, dual_step_length) > El::Max(primal_step_length_best, dual_step_length_best)
-			)
-		{
-			// save best state
-			save_load_beta_scan_best_state(
-				dx_best, dy_best, dX_best, dY_best, primal_step_length_best, dual_step_length_best,
-				beta_best, hess_BFGS_best, grad_mixed_best,
-				dx, dy, dX, dY, primal_step_length, dual_step_length, beta, hess_BFGS, grad_mixed);
-		}
-
-		if (El::mpi::Rank() == 0)
-		{
-			std::cout << "scan beta : " << beta << "\n" << std::flush;
-			std::cout << "P/D-step-len-ext = " << primal_step_length << " , " << dual_step_length << "\n" << std::flush;
-		}
+			n_external_parameters, prev_grad, prev_step, prev_BFGS, external_step,
+			dX_best, dY_best, dx_best, dy_best,
+			primal_step_length_best, dual_step_length_best, beta_best,
+			hess_BFGS_best, grad_mixed_best, update_sdp,
+			beta == beta_scan_begin_El);
 
 		// there is no special reason we don't want re-aiming for 1st call.
 		// But I just prefer to seperate them (usually 2nd call has some climing steps)
@@ -783,25 +708,139 @@ void Dynamical_Solver::dynamical_step(
 			return;
 		}
 
-		// if step_length > step_max_threshold, break
-		if (El::Max(primal_step_length, dual_step_length) > dynamical_parameters.step_max_threshold) break;
+
+		// Condition for break when stuck on GCP : the step should be in the optimal range
+		if (stall_on_GCP && El::Max(primal_step_length, dual_step_length) >= optimal_step_min
+			&& El::Max(primal_step_length, dual_step_length) <= optimal_step_max)
+		{
+			if (El::mpi::Rank() == 0)std::cout << "Find a good beta to solve stalling on GCP \n" << std::flush;
+			break;
+		}
+
+		if (stall_on_GCP == false)
+		{
+			// condition for stalling on GCP : (1), current beta is the last beta (but not first) to scan (usually 1) and current step=1;
+			//                                 (2), previous step < step_min_threshold
+			/*
+			stall_on_GCP = //primal_step_length == El::BigFloat(1) && dual_step_length == El::BigFloat(1) &&
+				primal_step_length > optimal_step_max && dual_step_length > optimal_step_max &&
+				(beta != beta_scan_begin_El ) &&  // beta + beta_scan_step_El > beta_scan_end_El &&
+				(El::Max(primal_step_length_prev, dual_step_length_prev) < dynamical_parameters.step_min_threshold);
+				*/
+
+			El::BigFloat step_size_curr = El::Max(primal_step_length, dual_step_length);
+			El::BigFloat step_size_prev = El::Max(primal_step_length_prev, dual_step_length_prev);
+
+			stall_on_GCP = (beta != beta_scan_begin_El) &&
+				step_size_curr > optimal_step_max && step_size_prev < optimal_step_min &&
+				step_size_curr - step_size_prev > 0.4;
+
+			if (stall_on_GCP == true)
+			{
+				bisect_beta_begin = beta_prev;
+				bisect_beta_end = beta;
+
+				if (El::mpi::Rank() == 0)std::cout << "stalling on GCP is detected. The solver will try to fine scan beta values \n" << std::flush;
+			}
+		}
+		else
+		{
+			if (El::Max(primal_step_length, dual_step_length) < optimal_step_min)
+				bisect_beta_begin = beta;
+			else
+				bisect_beta_end = beta;
+		}
+		// to be compatible with the old version, i.e. turn off this stalling solution, just set stall_on_GCP=false;
+		if (dynamical_parameters.optimalbetaQ == false)stall_on_GCP = false;
+
+		// if step_length > step_max_threshold and not stuck on GCP, break
+		if ((!stall_on_GCP) && El::Max(primal_step_length, dual_step_length) > dynamical_parameters.step_max_threshold) break;
+
+		// loop control
+		beta_prev = beta;
+		dual_step_length_prev = dual_step_length;
+		primal_step_length_prev = primal_step_length;
+
+		// special control : if stuck on GCP, I should bisection search for a better beta value
+		if (stall_on_GCP)
+		{
+			beta = (bisect_beta_begin + bisect_beta_end) / 2;
+
+			auto prec = std::cout.precision();
+			std::cout.precision(30);
+			if (El::mpi::Rank() == 0)
+				std::cout << "beta bisection bracket : (" << bisect_beta_begin << "," << bisect_beta_end << "). Next beta=" << beta << "\n" << std::flush;
+			std::cout.precision(prec);
+		}
+		else
+			beta += beta_scan_step_El;
+
+		/*
+		if (i == 9) beta = El::BigFloat("1.00001");
+		if (i == 10) beta = El::BigFloat("1.0593490960701");
+		if (i == 11) beta = El::BigFloat("1.0499239583975");
+		*/
 	}
 
-	// load best state
-	save_load_beta_scan_best_state(
-		dx, dy, dX, dY, primal_step_length, dual_step_length, beta, hess_BFGS, grad_mixed,
-		dx_best, dy_best, dX_best, dY_best, primal_step_length_best, dual_step_length_best,
-		beta_best, hess_BFGS_best, grad_mixed_best);
+	// load best state if not stuck on GCP
+	if (stall_on_GCP == false)
+		save_load_beta_scan_best_state(
+			dx, dy, dX, dY, primal_step_length, dual_step_length, beta, hess_BFGS, grad_mixed,
+			dx_best, dy_best, dX_best, dY_best, primal_step_length_best, dual_step_length_best,
+			beta_best, hess_BFGS_best, grad_mixed_best);
 
 	if (El::mpi::Rank() == 0)std::cout << "best scan result : best beta = " << beta << " step-len : ("
 		<< primal_step_length << ", " << dual_step_length << ")\n" << std::flush;
 
-	if (El::mpi::Rank() == 0)std::cout << "dualityGap_upper_limit=" << dynamical_parameters.dualityGap_upper_limit
-		<< " 2 * mu*total_psd_rows=" << 2 * mu*total_psd_rows
-		<< "\n" << std::flush;
+	/////////////// fine scan begin //////////////////////
+	if (stall_on_GCP == false && dynamical_parameters.stickToGCPQ == true &&
+		max_element(beta_scan_recorder.end() - 3, beta_scan_recorder.end(), comp_pair_second<El::BigFloat, El::BigFloat>())->second < 0.3)
+	{
+		if (El::mpi::Rank() == 0)std::cout << "Need fine scan beta\n";
+
+		bool new_beta_Q = true;
+		while (1)
+		{
+			El::BigFloat new_beta;
+			new_beta_Q = CubicApprox_LineSearch_RecommendPoint(beta_scan_recorder, beta_scan_end_El, beta_scan_step_El, new_beta);
+			if (new_beta_Q == false)break;
+			beta = new_beta;
+
+			dynamical_step_scan_beta(dynamical_parameters,
+				eplus, eminus, esum, H_xp, Delta_xy, internal_dx, internal_dy,
+				grad_withoutlog, grad_withlog, grad_p, grad_mixed, grad_corrected,
+				Lpu, mu, hess_pp, hess_mixed, hess_Exact,
+
+				total_psd_rows, block_info, sdp, grid,
+				X_cholesky, Y_cholesky, timers,
+				schur_complement_cholesky, schur_off_diagonal, Q,
+				dx, dy, dX, dY, R, grad_x, grad_y,
+				primal_residue_p, is_primal_and_dual_feasible,
+				beta, primal_step_length, dual_step_length, step_length_reduction,
+
+				n_external_parameters, prev_grad, prev_step, prev_BFGS, external_step,
+				dX_best, dY_best, dx_best, dy_best,
+				primal_step_length_best, dual_step_length_best, beta_best,
+				hess_BFGS_best, grad_mixed_best, update_sdp,
+				beta == beta_scan_begin_El);
+
+			if (El::Max(primal_step_length, dual_step_length) > optimal_step_min) break;
+		}
+	}
+
+	{
+		std::vector<std::pair<El::BigFloat, El::BigFloat>> beta_scan_recorder_tail(beta_scan_recorder.begin(), beta_scan_recorder.end());
+		if (El::mpi::Rank() == 0)std::cout << "beta scan history : ";
+		print_stdvector(beta_scan_recorder_tail);
+		if (El::mpi::Rank() == 0)std::cout << "\n";
+	}
+
+	/////////////// fine scan end //////////////////////
 
 	// check beta scan result
+	// note if we specified finite dGap target, hopping step should always be executed
 	if (El::Max(primal_step_length, dual_step_length) > dynamical_parameters.step_min_threshold || max_climbing <= 0 ||
+		dynamical_parameters.finite_dGap_target > 0 ||
 		(dynamical_parameters.dualityGap_upper_limit > 0 && 2 * mu*total_psd_rows > dynamical_parameters.dualityGap_upper_limit)
 		)
 	{
@@ -827,7 +866,7 @@ void Dynamical_Solver::dynamical_step(
 
 		update_sdp = true;
 		execute_step(dx, dy, dX, dY, primal_step_length, dual_step_length);
-                //update_grad_p(x, y, eplus_delta_sdp, sdp, n_external_parameters, grad_p);
+
 		compute_R_error(total_psd_rows, X, Y, R_err, coit_mu, timers);
 		if (El::mpi::Rank() == 0)std::cout << "after hopping step, R_err = " << R_err
 			<< " mu=" << coit_mu << "\n" << std::flush;
@@ -842,6 +881,12 @@ void Dynamical_Solver::dynamical_step(
 	// internal step
 	update_sdp = false;
 
+	if (dynamical_parameters.climbingRecomputeExtParamQ == false && lowest_mu_Q == true)
+	{
+		specified_ext_param = external_step;
+		specified_ext_param_Q = true;
+	}
+
 	beta = dynamical_parameters.beta_climbing;
 	max_climbing--;
 	lowest_mu_Q = false;
@@ -853,4 +898,128 @@ void Dynamical_Solver::dynamical_step(
 		primal_residue_p, mu, is_primal_and_dual_feasible,
 		beta, primal_step_length, dual_step_length, step_length_reduction);
 
+}
+
+void Dynamical_Solver::dynamical_step_scan_beta(const Dynamical_Solver_Parameters &dynamical_parameters,
+	const El::Matrix<El::BigFloat> & eplus, const El::Matrix<El::BigFloat> & eminus, const El::Matrix<El::BigFloat> & esum,
+	const std::vector<std::pair<Block_Vector, Block_Vector>> & H_xp, std::vector<std::pair<Block_Vector, Block_Vector>> & Delta_xy,
+	Block_Vector & internal_dx, Block_Vector & internal_dy,
+	const El::Matrix<El::BigFloat> & grad_withoutlog,
+	const El::Matrix<El::BigFloat> & grad_withlog,
+	El::Matrix<El::BigFloat> & grad_p, El::Matrix<El::BigFloat> & grad_mixed, El::Matrix<El::BigFloat> & grad_corrected,
+	El::Matrix<El::BigFloat> & Lpu, El::BigFloat & mu,
+	El::Matrix<El::BigFloat> & hess_pp, El::Matrix<El::BigFloat> & hess_mixed, El::Matrix<El::BigFloat> & hess_Exact,
+
+	const std::size_t &total_psd_rows,
+	const Block_Info &block_info,
+	const SDP &sdp, const El::Grid &grid,
+	const Block_Diagonal_Matrix &X_cholesky,
+	const Block_Diagonal_Matrix &Y_cholesky,
+	Timers &timers,
+
+	const Block_Diagonal_Matrix &schur_complement_cholesky,
+	const Block_Matrix &schur_off_diagonal,
+	const El::DistMatrix<El::BigFloat> &Q,
+
+	Block_Vector & dx, Block_Vector & dy,
+	Block_Diagonal_Matrix & dX, Block_Diagonal_Matrix & dY,
+	Block_Diagonal_Matrix & R,
+	Block_Vector &grad_x, Block_Vector &grad_y,
+
+	const Block_Vector &primal_residue_p,
+
+	const bool &is_primal_and_dual_feasible,
+	El::BigFloat &beta,
+	El::BigFloat &primal_step_length, El::BigFloat &dual_step_length,
+	El::BigFloat &step_length_reduction,
+
+	int n_external_parameters,
+	El::Matrix<El::BigFloat> & prev_grad,
+	El::Matrix<El::BigFloat> & prev_step,
+	El::Matrix<El::BigFloat> & prev_BFGS,
+	El::Matrix<El::BigFloat> & external_step,
+	Block_Diagonal_Matrix & dX_best, Block_Diagonal_Matrix & dY_best,
+	Block_Vector & dx_best, Block_Vector & dy_best,
+	El::BigFloat & primal_step_length_best, El::BigFloat & dual_step_length_best, El::BigFloat & beta_best,
+	El::Matrix<El::BigFloat> & hess_BFGS_best, El::Matrix<El::BigFloat> & grad_mixed_best,
+	bool & update_sdp,
+	
+	bool first_beta_Q
+	)
+{
+	int dim_y = 1540;
+
+	internal_predictor_direction_dxdydXdY(block_info, sdp, *this, schur_complement_cholesky,
+		schur_off_diagonal, X_cholesky, beta,
+		mu, primal_residue_p, Q, grad_x, grad_y, internal_dx, internal_dy, dX, dY, R);
+	internal_corrector_direction(block_info, sdp, *this, schur_complement_cholesky,
+		schur_off_diagonal, X_cholesky, beta,
+		mu, primal_residue_p, Q, grad_x, grad_y, internal_dx, internal_dy, dX, dY, R);
+
+	// compute various variables according to the formula
+	compute_grad_p_grad_mixed_Hpp_Hmixed(dynamical_parameters,
+		eplus, eminus, esum, H_xp, Delta_xy, internal_dx, internal_dy,
+		grad_withoutlog, grad_withlog, grad_p, grad_mixed, grad_corrected,
+		Lpu, mu, hess_pp, hess_mixed, hess_Exact);
+
+	// decide hess_BFGS
+	strategy_hess_BFGS(dynamical_parameters, n_external_parameters,
+		lowest_mu_Q, grad_p, grad_mixed, grad_corrected,
+		Lpu, mu, hess_pp, hess_mixed, hess_Exact,
+		prev_BFGS, prev_step, prev_grad, hess_BFGS_lowest_mu);
+
+	// compute external step
+	if (dynamical_parameters.find_boundary && dynamical_parameters.total_iterations > 0)
+	{
+		strategy_findboundary_extstep(block_info, X_cholesky, total_psd_rows, dim_y, mu, beta,
+			n_external_parameters, dynamical_parameters, lowest_mu_Q,
+			grad_corrected, grad_p, grad_mixed, external_step);
+	}
+	else
+	{
+		findMinimumQ = true;
+		// this is not used in minimization mode. we should compute lag_shifted only in "debug" mode
+		lag_shifted = finite_mu_navigator(block_info, X_cholesky, total_psd_rows, dim_y, mu, beta, dynamical_parameters);
+
+		external_step = grad_corrected;
+		external_step *= (-1);
+		El::LinearSolve(hess_BFGS, external_step);
+
+		if (El::mpi::Rank() == 0)
+		{
+			std::cout << "BFGS hess =\n";
+			print_matrix(hess_BFGS);
+			std::cout << "ext-step=";
+			print_vector(external_step);
+			std::cout << "\n";
+		}
+	}
+
+	// compute dx,dy,dX,dY for external_step
+	compute_external_dxdydXdY(is_primal_and_dual_feasible,
+		dynamical_parameters, block_info, sdp, grid, X_cholesky, Y_cholesky, timers,
+		internal_dx, internal_dy, dx, dy, dX, dY, R,
+		external_step, Delta_xy, primal_step_length, dual_step_length, step_length_reduction);
+
+	if (El::mpi::Rank() == 0)
+	{
+		auto prec = std::cout.precision();
+		std::cout.precision(20);
+		std::cout << "scan beta : " << beta << "\n" << std::flush;
+		std::cout << "P/D-step-len-ext = " << primal_step_length << " , " << dual_step_length << "\n" << std::flush;
+		std::cout.precision(prec);
+	}
+
+	// save the best beta
+	if (first_beta_Q ||
+		(primal_step_length + dual_step_length) > (primal_step_length_best + dual_step_length_best))
+	{
+		// save best state
+		save_load_beta_scan_best_state(
+			dx_best, dy_best, dX_best, dY_best, primal_step_length_best, dual_step_length_best,
+			beta_best, hess_BFGS_best, grad_mixed_best,
+			dx, dy, dX, dY, primal_step_length, dual_step_length, beta, hess_BFGS, grad_mixed);
+	}
+
+	beta_scan_recorder.push_back(std::make_pair(beta, El::Max(primal_step_length, dual_step_length)));
 }
