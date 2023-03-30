@@ -29,9 +29,9 @@ int main(int argc, char **argv)
 	if (El::mpi::Rank() == 0)
 		std::cout << "Elemental precision = " << prec_parameter.prec << "\n" << std::flush;
 
+
   El::gmp::SetPrecision(prec_parameter.prec);
-  //El::gmp::SetPrecision(1024);
-  //El::gmp::SetPrecision(1500);
+
 
 
   /*
