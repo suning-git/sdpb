@@ -105,7 +105,7 @@ def build(bld):
                         'src/pvm2sdp/read_input_files/read_xml_input/Input_Parser/on_characters.cxx'],
                 target='pvm2sdp2.4.0',
                 cxxflags=default_flags,
-                use=use_packages + ['sdp_convert']
+                use=use_packages + ['sdp_convert2.4.0']
                 )
 
     bld.program(source=['src/sdp2input/main.cxx',
@@ -148,7 +148,7 @@ def build(bld):
                         'src/sdp2input/write_output/bilinear_basis/bilinear_form/operator_plus_set_Derivative_Term.cxx'],
                 target='sdp2input2.4.0',
                 cxxflags=default_flags,
-                use=use_packages + ['sdp_convert']
+                use=use_packages + ['sdp_convert2.4.0']
                 )
 
     bld.program(source=['src/block_grid_mapping/main.cxx',
