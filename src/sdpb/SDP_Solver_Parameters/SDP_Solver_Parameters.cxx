@@ -189,6 +189,10 @@ SDP_Solver_Parameters::SDP_Solver_Parameters(int argc, char *argv[])
     po::value<El::BigFloat>(&save_mid_checkpoint_mu_threshold)
       ->default_value(El::BigFloat("-1", 10)),
     "Save middle checkpoint when mu meet the threshold.");
+
+  solver_options.add_options()(
+	  "saveMiddleCheckpointExtraIterations", po::value<int>(&save_mid_extra_iteration)->default_value(10),
+	  "The solver will run at least saveMiddleCheckpointExtraIterations number of iterations before save the middle checkpoint.");
     
 
   po::options_description cmd_line_options;

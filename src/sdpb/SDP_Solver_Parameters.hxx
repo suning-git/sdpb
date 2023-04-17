@@ -28,6 +28,7 @@ struct SDP_Solver_Parameters
     infeasible_centering_parameter, step_length_reduction, max_complementarity;
     
   El::BigFloat save_mid_checkpoint_mu_threshold;
+  int save_mid_extra_iteration;
 
   boost::filesystem::path sdp_directory, out_directory, checkpoint_in,
     checkpoint_out, param_file;

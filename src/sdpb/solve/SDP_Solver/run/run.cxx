@@ -181,7 +181,7 @@ SDP_Solver::run(const SDP_Solver_Parameters &parameters,
                       
                       
 	  if (parameters.save_mid_checkpoint_mu_threshold > 0 && mu < parameters.save_mid_checkpoint_mu_threshold
-		  && Max(dual_step_length, primal_step_length) > 0.1 && iteration >= 10)
+		  && Max(dual_step_length, primal_step_length) > 0.1 && iteration >= parameters.save_mid_extra_iteration)
 	  {
 		  boost::filesystem::path checkpoint_mid_out = parameters.checkpoint_out;
 
