@@ -2,21 +2,21 @@ import os, subprocess
 
 def options(opt):
     opt.load(['compiler_cxx','gnu_dirs','cxx17','boost','gmpxx','mpfr',
-              'elemental','libxml2', 'rapidjson'])
+              'elemental','libxml2', 'rapidjson', 'libarchive'])
 
 def configure(conf):
     if not 'CXX' in os.environ or os.environ['CXX']=='g++' or os.environ['CXX']=='icpc':
         conf.environ['CXX']='mpicxx'
 
     conf.load(['compiler_cxx','gnu_dirs','cxx17','boost','gmpxx','mpfr',
-               'elemental','libxml2', 'rapidjson'])
+               'elemental','libxml2', 'rapidjson', 'libarchive'])
 
     conf.env.git_version=subprocess.check_output('git describe --dirty', universal_newlines=True, shell=True).rstrip()
     
 def build(bld):
     #default_flags=['-Wall', '-Wextra', '-O3', '-D SDPB_VERSION_STRING="' + bld.env.git_version + '"']
     default_flags=['-Wall', '-Wextra', '-g', '-D SDPB_VERSION_STRING="' + bld.env.git_version + '"']
-    use_packages=['cxx17','boost','gmpxx','mpfr','elemental','libxml2', 'rapidjson']
+    use_packages=['cxx17','boost','gmpxx','mpfr','elemental','libxml2', 'rapidjson', 'libarchive']
     
     library_sources=['src/sdp_convert/Dual_Constraint_Group/Dual_Constraint_Group/Dual_Constraint_Group.cxx',
                      'src/sdp_convert/Dual_Constraint_Group/Dual_Constraint_Group/sample_bilinear_basis.cxx',
@@ -26,7 +26,19 @@ def build(bld):
                      'src/sdp_convert/write_primal_objective_c.cxx',
                      'src/sdp_convert/write_free_var_matrix.cxx',
                      'src/sdp_convert/write_sdpb_input_files.cxx',
-                     'src/sdp_convert/read_file_list.cxx']
+                     'src/sdp_convert/read_file_list.cxx',
+					 
+                     'src/sdp_convert_V2.5.0/write_objectives.cxx',
+					 'src/sdp_convert_V2.5.0/write_bilinear_bases.cxx',
+                     'src/sdp_convert_V2.5.0/write_blocks.cxx',
+                     'src/sdp_convert_V2.5.0/write_primal_objective_c.cxx',
+                     'src/sdp_convert_V2.5.0/write_free_var_matrix.cxx',
+                     'src/sdp_convert_V2.5.0/write_sdpb_input_files.cxx',
+                     'src/sdp_convert_V2.5.0/write_control.cxx',
+                     'src/sdp_convert_V2.5.0/Archive_Writer/Archive_Writer.cxx',
+                     'src/sdp_convert_V2.5.0/Archive_Writer/write_entry.cxx',
+                     'src/sdp_convert_V2.5.0/Archive_Entry.cxx'
+					 ]
 
     bld.stlib(source=library_sources,
               target='sdp_convert',
@@ -73,7 +85,7 @@ def build(bld):
                         'src/sdp2input/write_output/bilinear_basis/bilinear_form/dExp.cxx',
                         'src/sdp2input/write_output/bilinear_basis/bilinear_form/derivative.cxx',
                         'src/sdp2input/write_output/bilinear_basis/bilinear_form/operator_plus_set_Derivative_Term.cxx'],
-                target='sdp2input_mod',
+                target='sdp2input_mod_2.5.0',
                 cxxflags=default_flags,
                 use=use_packages + ['sdp_convert']
                 )

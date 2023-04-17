@@ -11,6 +11,16 @@ std::vector<Polynomial> bilinear_basis(const Damped_Rational &damped_rational,
 
 std::vector<Boost_Float> sample_points(const size_t &num_points);
 
+
+
+void write_sdpb_input_files(
+	const boost::filesystem::path &output_path, const int &rank,
+	const size_t &num_blocks, const std::vector<std::string> &command_arguments,
+	const El::BigFloat &objective_const,
+	const std::vector<El::BigFloat> &dual_objective_b,
+	const std::vector<Dual_Constraint_Group> &dual_constraint_groups);
+
+
 void write_output(const boost::filesystem::path &output_dir,
                   const std::vector<El::BigFloat> &objectives,
                   const std::vector<El::BigFloat> &normalization,
@@ -165,13 +175,21 @@ void write_output(const boost::filesystem::path &output_dir,
       pvm_timer.stop();
       auto &dual_constraint_timer(timers.add_and_start(
         "write_output.matrices.dual_constraint_" + std::to_string(index)));
-      dual_constraint_groups.emplace_back(pvm);
+      dual_constraint_groups.emplace_back(index, pvm);
       dual_constraint_timer.stop();
     }
   matrices_timer.stop();
 
   auto &write_timer(timers.add_and_start("write_output.write"));
+
+  /*
   write_sdpb_input_files(output_dir, rank, num_procs, indices, objective_const,
                          dual_objective_b, dual_constraint_groups);
+  */
+
+  write_sdpb_input_files(output_dir, rank, matrices.size(), {""},
+	  objective_const, dual_objective_b,
+	  dual_constraint_groups);
+
   write_timer.stop();
 }
