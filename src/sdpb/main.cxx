@@ -44,13 +44,12 @@ int main(int argc, char **argv)
                             parameters.procs_per_node,
                             parameters.proc_granularity, parameters.verbosity);
 
-	  // if (parameters.compute_sdp2_derivative){}
 
       // Only generate a block_timings file if
       // 1) We are running in parallel
       // 2) We did not load a block_timings file
       // 3) We are not going to load a checkpoint.
-      if(El::mpi::Size(El::mpi::COMM_WORLD) > 1
+      if(false && El::mpi::Size(El::mpi::COMM_WORLD) > 1
          && block_info.block_timings_filename.empty()
          && !exists(parameters.checkpoint_in / "checkpoint.0"))
         {
@@ -72,8 +71,10 @@ int main(int argc, char **argv)
             {
               timing_parameters.verbosity = Verbosity::none;
             }
+
           Timers timers(solve(block_info, timing_parameters));
 
+		  /**/
           El::Matrix<int32_t> block_timings(block_info.dimensions.size(), 1);
           write_timing(timing_parameters.checkpoint_out, block_info, timers,
                        timing_parameters.verbosity >= Verbosity::debug,
@@ -85,6 +86,7 @@ int main(int argc, char **argv)
           std::swap(block_info, new_info);
 
           parameters.max_runtime -= timers.front().second.elapsed_seconds();
+		  
         }
       else if(!block_info.block_timings_filename.empty()
               && block_info.block_timings_filename
@@ -98,6 +100,7 @@ int main(int argc, char **argv)
                         boost::filesystem::copy_option::overwrite_if_exists);
             }
         }
+
       solve(block_info, parameters);
     }
   catch(std::exception &e)

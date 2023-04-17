@@ -21,8 +21,6 @@ void compute_search_direction(
 	const Block_Diagonal_Matrix &schur_complement_cholesky,
 	const Block_Matrix &schur_off_diagonal,
 	const Block_Diagonal_Matrix &X_cholesky,
-	const Block_Diagonal_Matrix Z,
-	const bool &is_compute_derivative_dBdbdc,
 	const El::DistMatrix<El::BigFloat> &Q, Block_Vector &dx,
 	Block_Diagonal_Matrix &dX, Block_Vector &dy, Block_Diagonal_Matrix &dY);
 
@@ -81,6 +79,9 @@ void SDP_Solver::step(const SDP_Solver_Parameters &parameters,
   // as (x, X, y, Y). They are computed twice each iteration:
   // once in the predictor step, and once in the corrector step.
   {
+
+	  //if (El::mpi::Rank() == 0) std::cout << "step.schur_complement_cholesky \n";
+
     // SchurComplementCholesky = L', the Cholesky decomposition of the
     // Schur complement matrix S.
     Block_Diagonal_Matrix schur_complement_cholesky(
@@ -90,6 +91,8 @@ void SDP_Solver::step(const SDP_Solver_Parameters &parameters,
     // SchurOffDiagonal = L'^{-1} FreeVarMatrix, needed in solving the
     // Schur complement equation.
     Block_Matrix schur_off_diagonal;
+
+	//if (El::mpi::Rank() == 0) std::cout << "step.Q \n";
 
     // Q = B' L'^{-T} L'^{-1} B' - {{0, 0}, {0, 1}}, where B' =
     // (FreeVarMatrix U).  Q is needed in the factorization of the Schur
@@ -102,11 +105,15 @@ void SDP_Solver::step(const SDP_Solver_Parameters &parameters,
     El::DistMatrix<El::BigFloat> Q(sdp.dual_objective_b.Height(),
                                    sdp.dual_objective_b.Height());
 
+	//if (El::mpi::Rank() == 0) std::cout << "step.initialize_schur_complement_solver \n";
+
     // Compute SchurComplement and prepare to solve the Schur
     // complement equation for dx, dy
     initialize_schur_complement_solver(
       block_info, sdp, bilinear_pairings_X_inv, bilinear_pairings_Y, grid,
       schur_complement_cholesky, schur_off_diagonal, Q, timers);
+
+	//if (El::mpi::Rank() == 0) std::cout << "step.complementarity \n";
 
     // Compute the complementarity mu = Tr(X Y)/X.dim
     auto &frobenius_timer(
@@ -122,20 +129,22 @@ void SDP_Solver::step(const SDP_Solver_Parameters &parameters,
     auto &predictor_timer(
       timers.add_and_start("run.step.computeSearchDirection(betaPredictor)"));
 
+	//if (El::mpi::Rank() == 0) std::cout << "step.Z \n";
 
+	/*
 	Block_Diagonal_Matrix Z(X);
 	multiply(primal_residues, Y, Z);
 	cholesky_solve(X_cholesky, Z);
 	Z.symmetrize();
-
-
+	*/
 
 	for (int i = 0; i < dsdp_list.size(); i++)
 	{
 		DSDPSOLUTION*psol = new DSDPSOLUTION(x,X,y,Y);
+
 		compute_search_direction(block_info, sdp, *dsdp_list[i], *this, schur_complement_cholesky,
 			schur_off_diagonal, X_cholesky,
-			Z, parameters.compute_derivative_dBdbdc, Q, psol->dx, psol->dX, psol->dy, psol->dY);
+			Q, psol->dx, psol->dX, psol->dy, psol->dY);
 
 		dsdp_sol_list.push_back(psol);
 	}

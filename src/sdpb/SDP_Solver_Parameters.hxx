@@ -16,7 +16,7 @@ struct SDP_Solver_Parameters
 {
   int64_t max_iterations, max_runtime, checkpoint_interval;
   bool no_final_checkpoint, find_primal_feasible, find_dual_feasible,
-    detect_primal_feasible_jump, detect_dual_feasible_jump, compute_derivative_dBdbdc, sdpd_mode_db, sdpd_mode_Bbc, sdpd_mode_dBdbdc;
+	  detect_primal_feasible_jump, detect_dual_feasible_jump;
   bool require_initial_checkpoint = false;
   size_t precision, procs_per_node, proc_granularity;
   Write_Solution write_solution;
@@ -29,6 +29,9 @@ struct SDP_Solver_Parameters
 
   boost::filesystem::path sdp_directory, out_directory, checkpoint_in,
     checkpoint_out, param_file;
+  El::BigFloat finiteDifference;
+  bool sdpd_mode_exact_dSDP, sdpd_mode_dSDP_only_b,
+	  sdpd_mode_hessian_ii, sdpd_mode_hessian_ij, sdpd_mode_approx_objective;
 
   std::vector<boost::filesystem::path> list_sdp2_path;
 

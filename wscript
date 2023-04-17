@@ -76,8 +76,25 @@ def build(bld):
                         'src/sdpb/solve/SDP_Solver_Terminate_Reason/ostream.cxx',
                         'src/sdpb/solve/lower_triangular_transpose_solve.cxx',
                         'src/sdpb/solve/Block_Diagonal_Matrix/ostream.cxx'],
-                target='sdpd',
+                target='sdpdd_hessian_ij',
                 cxxflags=default_flags,
                 use=use_packages
                 )
+    
+    library_sources=['src/sdp_convert/Dual_Constraint_Group/Dual_Constraint_Group/Dual_Constraint_Group.cxx',
+                     'src/sdp_convert/Dual_Constraint_Group/Dual_Constraint_Group/sample_bilinear_basis.cxx',
+                     'src/sdp_convert/write_objectives.cxx',
+                     'src/sdp_convert/write_bilinear_bases.cxx',
+                     'src/sdp_convert/write_blocks.cxx',
+                     'src/sdp_convert/write_primal_objective_c.cxx',
+                     'src/sdp_convert/write_free_var_matrix.cxx',
+                     'src/sdp_convert/write_sdpb_input_files.cxx',
+                     'src/sdp_convert/read_file_list.cxx']
+
+    bld.stlib(source=library_sources,
+              target='sdp_convert',
+              cxxflags=default_flags,
+              use=use_packages)
+
+                        
     

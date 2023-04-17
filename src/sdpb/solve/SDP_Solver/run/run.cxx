@@ -63,6 +63,8 @@ SDP_Solver::run(const SDP_Solver_Parameters &parameters,
                 const Block_Info &block_info, const SDP &sdp, const std::vector<SDP*> dsdp_list,
                 const El::Grid &grid, Timers &timers)
 {
+	if (El::mpi::Rank() == 0) std::cout << "begin run \n";
+
   SDP_Solver_Terminate_Reason terminate_reason(
     SDP_Solver_Terminate_Reason::MaxIterationsExceeded);
   auto &solver_timer(timers.add_and_start("Solver runtime"));
@@ -168,7 +170,6 @@ SDP_Solver::run(const SDP_Solver_Parameters &parameters,
 	  primal_step_length, dual_step_length, iteration,
 	  solver_timer.start_time, is_primal_and_dual_feasible, terminate_reason,
 	  terminate_now);
-
 
   El::BigFloat mu, beta_corrector;
   step(parameters, total_psd_rows, is_primal_and_dual_feasible, block_info,

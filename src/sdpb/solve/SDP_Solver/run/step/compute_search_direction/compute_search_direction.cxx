@@ -43,9 +43,8 @@ void compute_schur_RHS_db(const Block_Info &block_info, const SDP &sdp,
 	const Block_Diagonal_Matrix &Z,
 	Block_Vector &dx);
 
-void compute_schur_RHS_dBbc(const Block_Info &block_info, const SDP &sdp,
+void compute_schur_RHS_dB_db_dc(const Block_Info &block_info, const SDP &sdp,
 	const Block_Vector &y,
-	const Block_Diagonal_Matrix &Z,
 	Block_Vector &dx);
 
 void compute_primal_residues_and_error_p_b_Bx(const Block_Info &block_info,
@@ -59,13 +58,12 @@ void solve_schur_complement_equation(
 	const Block_Matrix &schur_off_diagonal,
 	const El::DistMatrix<El::BigFloat> &Q, Block_Vector &dx, Block_Vector &dy);
 
+
 void compute_search_direction(
 	const Block_Info &block_info, const SDP &sdp, const SDP &dsdp, const SDP_Solver &solver,
 	const Block_Diagonal_Matrix &schur_complement_cholesky,
 	const Block_Matrix &schur_off_diagonal,
 	const Block_Diagonal_Matrix &X_cholesky,
-	const Block_Diagonal_Matrix Z,
-	const bool &is_compute_derivative_dBdbdc,
 	const El::DistMatrix<El::BigFloat> &Q, Block_Vector &dx,
 	Block_Diagonal_Matrix &dX, Block_Vector &dy, Block_Diagonal_Matrix &dY)
 {
@@ -92,41 +90,11 @@ void compute_search_direction(
 	Z.symmetrize();
 	*/
 
-	if (is_compute_derivative_dBdbdc)
-	{
-		compute_schur_RHS_dBbc(block_info, dsdp, solver.y, Z, dx);
+	compute_schur_RHS_dB_db_dc(block_info, dsdp, solver.y, dx);
 
-		El::BigFloat primal_error_dsdp;
-		compute_primal_residues_and_error_p_b_Bx(
-			block_info, dsdp, solver.x, dy, primal_error_dsdp);
-	}
-	else
-	{
-		// set dx=0
-		auto dx_block(dx.blocks.begin());
-		for (auto &block_index : block_info.block_indices)
-		{
-			*dx_block *= 0;
-			++dx_block;
-		}
-
-		// try to set dy = sdp.dual_objective_b
-		auto dy_block(dy.blocks.begin());
-		for (auto &block_index : block_info.block_indices)
-		{
-			*dy_block *= 0;
-
-			// The total primal error is the sum of all of the different
-			// blocks.  So to prevent double counting, only add
-			// dual_objective_b to one of the residue blocks.
-			if (block_index == 0)
-			{
-				El::Axpy(El::BigFloat(1), sdp.dual_objective_b, *dy_block);
-			}
-			++dy_block;
-		}
-	}
-
+	El::BigFloat primal_error_dsdp;
+	compute_primal_residues_and_error_p_b_Bx(
+		block_info, dsdp, solver.x, dy, primal_error_dsdp);
 
 	// Solve for dx, dy in-place
 	solve_schur_complement_equation(schur_complement_cholesky,

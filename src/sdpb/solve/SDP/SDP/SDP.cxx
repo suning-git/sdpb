@@ -33,3 +33,21 @@ SDP::SDP(const boost::filesystem::path &sdp_directory,
   read_free_var_matrix(sdp_directory, block_info.block_indices, grid,
                        free_var_matrix);
 }
+
+
+SDP::SDP(const boost::filesystem::path &sdp_directory,
+	const Block_Info &block_info, const El::Grid &grid, const bool b_only)
+{
+	read_objectives(sdp_directory, grid, objective_const, dual_objective_b);
+
+	
+	if (!b_only)
+	{
+		read_bilinear_bases(sdp_directory, block_info, grid,
+			bilinear_bases_local, bilinear_bases_dist);
+		read_primal_objective_c(sdp_directory, block_info.block_indices, grid,
+			primal_objective_c);
+		read_free_var_matrix(sdp_directory, block_info.block_indices, grid,
+			free_var_matrix);
+	}
+}

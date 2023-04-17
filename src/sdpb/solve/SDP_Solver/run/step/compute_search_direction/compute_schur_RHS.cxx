@@ -103,35 +103,37 @@ void compute_schur_RHS_db(const Block_Info &block_info, const SDP &sdp,
 }
 
 
-void compute_schur_RHS_dBbc(const Block_Info &block_info, const SDP &sdp,
+void compute_schur_RHS_dB_db_dc(const Block_Info &block_info, const SDP &sdp,
 	const Block_Vector &y,
-	const Block_Diagonal_Matrix &Z,
 	Block_Vector &dx)
 {
 	auto dx_block(dx.blocks.begin());
+
 	auto primal_objective_c_block(sdp.primal_objective_c.blocks.begin());
+
 	auto y_block(y.blocks.begin());
+
 	auto free_var_matrix_block(sdp.free_var_matrix.blocks.begin());
 
 	for (auto &block_index : block_info.block_indices)
 	{
 		Zero(*dx_block);
-		const size_t block_size(block_info.degrees[block_index] + 1);
 
+		/**/
 		// dx -= FreeVarMatrix * y
 		Gemm(El::Orientation::NORMAL, El::Orientation::NORMAL, El::BigFloat(-1),
 			*free_var_matrix_block, *y_block, El::BigFloat(1),
 			*dx_block);
+
 		// dx += primalObjective
 		Axpy(El::BigFloat(1), *primal_objective_c_block, *dx_block);
 		// dx *= -1
 		*dx_block *= El::BigFloat(-1);
-		*dx_block *= 0;
+		
 
 		++primal_objective_c_block;
 		++y_block;
 		++free_var_matrix_block;
 		++dx_block;
 	}
-
 }

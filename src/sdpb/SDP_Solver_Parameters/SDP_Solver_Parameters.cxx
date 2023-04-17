@@ -11,6 +11,8 @@ SDP_Solver_Parameters::SDP_Solver_Parameters(int argc, char *argv[])
   std::string write_solution_string;
   using namespace std::string_literals;
 
+  std::string str_finiteDifference;
+
   po::options_description required_options("Required options");
   required_options.add_options()(
     "sdpDir,s", po::value<boost::filesystem::path>(&sdp_directory)->required(),
@@ -36,11 +38,6 @@ SDP_Solver_Parameters::SDP_Solver_Parameters(int argc, char *argv[])
     "Any parameter can optionally be set via this file in key=value "
     "format. Command line arguments override values in the parameter "
     "file.");
-
-  basic_options.add_options()(
-	  "DerivSDPList,d", po::value< std::vector<boost::filesystem::path> >(&list_sdp2_path)->multitoken(),
-	  "A list of SDP_i"
-	  );
 
   basic_options.add_options()(
     "outDir,o", po::value<boost::filesystem::path>(&out_directory),
@@ -95,21 +92,6 @@ SDP_Solver_Parameters::SDP_Solver_Parameters(int argc, char *argv[])
   // precision defaults results in differences of about 1e-15 in
   // primalObjective after one step.
   po::options_description solver_options("Solver parameters");
-
-  // options for SDPD mode 
-  solver_options.add_options()(
-	  "SDP1_db",
-	  po::bool_switch(&sdpd_mode_db)->default_value(false),
-	  "SDPD mode 1: SDP1 is specified by -s. SPD1 contains exact db.");
-  solver_options.add_options()(
-	  "SDP2_B_b_c",
-	  po::bool_switch(&sdpd_mode_Bbc)->default_value(false),
-	  "SDPD mode 2: SDP1 is specified by -s. SDP2 is specified by -d. SDPD will substract SDP1-SDP2 to get dB,db,dc.");
-  solver_options.add_options()(
-	  "SDP2_dB_db_dc",
-	  po::bool_switch(&sdpd_mode_dBdbdc)->default_value(false),
-	  "SDPD mode 3: SDP1 is specified by -s. SDP2 is specified by -d. SDP2 contains dB,db,dc.");
-
 
   solver_options.add_options()(
     "precision", po::value<size_t>(&precision)->default_value(400),
@@ -205,6 +187,40 @@ SDP_Solver_Parameters::SDP_Solver_Parameters(int argc, char *argv[])
       ->default_value(El::BigFloat("1e100", 10)),
     "Terminate if the complementarity mu = Tr(X Y)/dim(X) "
     "exceeds this value.");
+  
+
+  // options for SDPD mode 
+  solver_options.add_options()(
+	  "dSDP_only_b",
+	  po::bool_switch(&sdpd_mode_dSDP_only_b)->default_value(false),
+	  "The dSDP files only contain component b.");
+
+
+  solver_options.add_options()(
+	  "compute_hessian_ii",
+	  po::bool_switch(&sdpd_mode_hessian_ii)->default_value(false),
+	  "sdpdd should compute hessian.");
+
+  solver_options.add_options()(
+	  "compute_hessian",
+	  po::bool_switch(&sdpd_mode_hessian_ij)->default_value(false),
+	  "sdpdd should compute hessian.");
+
+  solver_options.add_options()(
+	  "approx_objective",
+	  po::bool_switch(&sdpd_mode_approx_objective)->default_value(false),
+	  "sdpdd will compute change of objective at new sdp using 2nd order formula.");
+
+  solver_options.add_options()(
+	  "finiteDifference",
+	  po::value<std::string>(&str_finiteDifference),
+	  "finite difference for the derivatives");
+
+
+  basic_options.add_options()(
+	  "DerivSDPList,d", po::value< std::vector<boost::filesystem::path> >(&list_sdp2_path)->multitoken(),
+	  "A list of SDP_i"
+	  );
 
   po::options_description cmd_line_options;
   cmd_line_options.add(required_options).add(basic_options).add(solver_options);
@@ -278,6 +294,18 @@ SDP_Solver_Parameters::SDP_Solver_Parameters(int argc, char *argv[])
 			  */
             }
 
+		  if (variables_map.count("finiteDifference") == 0)
+		  {
+			  if (El::mpi::Rank() == 0) std::cout << "set sdpd_mode_exact_dSDP to true. count=" << variables_map.count("finiteDifference") << "\n";
+			  sdpd_mode_exact_dSDP = true;
+		  }
+		  else
+		  {
+			  finiteDifference = El::BigFloat(str_finiteDifference, 10, precision);
+			  if (El::mpi::Rank() == 0) std::cout << "set sdpd_mode_exact_dSDP to false. count=" << variables_map.count("finiteDifference") << "\n";
+			  sdpd_mode_exact_dSDP = false;
+		  }
+
 		  if (!no_final_checkpoint)
 		  {
 			  if (El::mpi::Rank() == 0)
@@ -315,29 +343,29 @@ SDP_Solver_Parameters::SDP_Solver_Parameters(int argc, char *argv[])
               require_initial_checkpoint = true;
             }
 
-		  if (variables_map.count("DerivSDPList") == 0)
-		  {
-			  compute_derivative_dBdbdc = false;
-		  }
-		  else
-		  {
-			  compute_derivative_dBdbdc = true;
-		  }
-
-		  if ((!sdpd_mode_db) && (!sdpd_mode_Bbc) && (!sdpd_mode_dBdbdc))
-		  {
-			  if (El::mpi::Rank() == 0)
-			  {
-				  std::cout << "Error : one of following options need be specified : --SDP1_db, --SDP2_B_b_c, --SDP2_dB_db_dc\n";
-			  }
-			  El::mpi::Abort(El::mpi::COMM_WORLD, 1);
-		  }
-
 		  if (list_sdp2_path.size()<1)
 		  {
 			  if (El::mpi::Rank() == 0)
 			  {
 				  std::cout << "Error : -d should followed by at least one sdp file.\n";
+			  }
+			  El::mpi::Abort(El::mpi::COMM_WORLD, 1);
+		  }
+
+		  if (sdpd_mode_hessian_ii && list_sdp2_path.size()<2)
+		  {
+			  if (El::mpi::Rank() == 0)
+			  {
+				  std::cout << "Error : with --compute_hessian_ii, -d should followed by at least 2 sdp files.\n";
+			  }
+			  El::mpi::Abort(El::mpi::COMM_WORLD, 1);
+		  }
+
+		  if (sdpd_mode_hessian_ij && list_sdp2_path.size()<3)
+		  {
+			  if (El::mpi::Rank() == 0)
+			  {
+				  std::cout << "Error : with --compute_hessian_ij, -d should followed by at least 3 sdp files.\n";
 			  }
 			  El::mpi::Abort(El::mpi::COMM_WORLD, 1);
 		  }

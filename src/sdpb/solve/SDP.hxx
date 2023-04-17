@@ -100,4 +100,7 @@ public:
 
   SDP(const boost::filesystem::path &sdp_directory,
       const Block_Info &block_info, const El::Grid &grid);
+
+  SDP(const boost::filesystem::path &sdp_directory,
+	  const Block_Info &block_info, const El::Grid &grid, const bool b_only);
 };
