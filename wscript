@@ -73,7 +73,7 @@ def build(bld):
                         'src/sdp2input/write_output/bilinear_basis/bilinear_form/dExp.cxx',
                         'src/sdp2input/write_output/bilinear_basis/bilinear_form/derivative.cxx',
                         'src/sdp2input/write_output/bilinear_basis/bilinear_form/operator_plus_set_Derivative_Term.cxx'],
-                target='sdp2input_mod',
+                target='sdp2input_mod_2.4.0',
                 cxxflags=default_flags,
                 use=use_packages + ['sdp_convert']
                 )
