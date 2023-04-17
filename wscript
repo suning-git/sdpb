@@ -76,7 +76,7 @@ def build(bld):
                         'src/sdpb/solve/SDP_Solver_Terminate_Reason/ostream.cxx',
                         'src/sdpb/solve/lower_triangular_transpose_solve.cxx',
                         'src/sdpb/solve/Block_Diagonal_Matrix/ostream.cxx'],
-                target='sdpb',
+                target='sdpb2.4.0_midck',
                 cxxflags=default_flags,
                 use=use_packages
                 )
@@ -92,7 +92,7 @@ def build(bld):
                      'src/sdp_convert/read_file_list.cxx']
 
     bld.stlib(source=library_sources,
-              target='sdp_convert',
+              target='sdp_convert2.4.0',
               cxxflags=default_flags,
               use=use_packages)
 
@@ -103,7 +103,7 @@ def build(bld):
                         'src/pvm2sdp/read_input_files/read_xml_input/Input_Parser/on_start_element.cxx',
                         'src/pvm2sdp/read_input_files/read_xml_input/Input_Parser/on_end_element.cxx',
                         'src/pvm2sdp/read_input_files/read_xml_input/Input_Parser/on_characters.cxx'],
-                target='pvm2sdp',
+                target='pvm2sdp2.4.0',
                 cxxflags=default_flags,
                 use=use_packages + ['sdp_convert']
                 )
@@ -146,14 +146,14 @@ def build(bld):
                         'src/sdp2input/write_output/bilinear_basis/bilinear_form/dExp.cxx',
                         'src/sdp2input/write_output/bilinear_basis/bilinear_form/derivative.cxx',
                         'src/sdp2input/write_output/bilinear_basis/bilinear_form/operator_plus_set_Derivative_Term.cxx'],
-                target='sdp2input',
+                target='sdp2input2.4.0',
                 cxxflags=default_flags,
                 use=use_packages + ['sdp_convert']
                 )
 
     bld.program(source=['src/block_grid_mapping/main.cxx',
                         'src/compute_block_grid_mapping.cxx'],
-                target='block_grid_mapping',
+                target='block_grid_mapping2.4.0',
                 cxxflags=default_flags,
                 use=use_packages
                 )
