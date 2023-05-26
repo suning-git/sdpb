@@ -43,6 +43,8 @@ void solve_schur_complement_equation(
   const Block_Matrix &schur_off_diagonal,
   const El::DistMatrix<El::BigFloat> &Q, Block_Vector &dx, Block_Vector &dy);
 
+El::BigFloat dot(const Block_Vector &A, const Block_Vector &B);
+
 void compute_search_direction(
   const Block_Info &block_info, const SDP &sdp, const SDP_Solver &solver,
   const Block_Diagonal_Matrix &schur_complement_cholesky,
@@ -75,6 +77,23 @@ void compute_search_direction(
   // dy[n] = dualObjective[n] - (FreeVarMatrix^T x)_n
   compute_schur_RHS(block_info, sdp, solver.dual_residues, Z, dx);
   dy=primal_residue_p;
+
+  if (is_corrector_phase)
+  {
+	  El::BigFloat dx2, dy2;
+	  dx2 = dot(dx, dx);
+	  dy2 = dot(dy, dy);
+	  if (El::mpi::Rank() == 0)std::cout << "Corrector RHS : |dx.dx|=" << dx2 <<
+		  ", |dy.dy|=" << dy2 << "\n";
+  }
+  else
+  {
+	  El::BigFloat dx2, dy2;
+	  dx2 = dot(dx, dx);
+	  dy2 = dot(dy, dy);
+	  if (El::mpi::Rank() == 0)std::cout << "Predictor RHS : |dx.dx|=" << dx2 <<
+		  ", |dy.dy|=" << dy2 << "\n";
+  }
 
   // Solve for dx, dy in-place
   solve_schur_complement_equation(schur_complement_cholesky,

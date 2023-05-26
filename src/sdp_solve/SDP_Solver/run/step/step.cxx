@@ -40,14 +40,15 @@ step_length(const Block_Diagonal_Matrix &MCholesky,
             const Block_Diagonal_Matrix &dM, const El::BigFloat &gamma,
             const std::string &timer_name, Timers &timers);
 
+void compute_R_error(const std::size_t &total_psd_rows,
+	const Block_Diagonal_Matrix &X, const Block_Diagonal_Matrix &Y, El::BigFloat & R_error);
 
-void compute_beta_for_finiteMuTarget(const Solver_Parameters &parameters, El::BigFloat &mu, El::BigFloat& beta)
-{
-	//std::cout << "compute_beta_for_finiteMuTarget : "<< parameters.finiteMuTarget <<"\n";
-	if (parameters.finiteMuTarget <= 0)return;
-	El::BigFloat newbeta = parameters.finiteMuTarget / mu;
-	if (0.1 < newbeta)beta = newbeta;
-};
+El::BigFloat max_step_length(const Block_Diagonal_Matrix &MCholesky,
+	const Block_Diagonal_Matrix &dM,
+	const std::string &timer_name,
+	Timers &timers);
+
+El::BigFloat dot(const Block_Vector &A, const Block_Vector &B);
 
 void SDP_Solver::step(
   const Solver_Parameters &parameters, const std::size_t &total_psd_rows,
@@ -65,6 +66,9 @@ void SDP_Solver::step(
   El::BigFloat &beta_corrector, El::BigFloat &primal_step_length,
   El::BigFloat &dual_step_length, bool &terminate_now, Timers &timers)
 {
+  El::BigFloat R_error;
+
+
   auto &step_timer(timers.add_and_start("run.step"));
   El::BigFloat beta_predictor;
 
@@ -115,16 +119,32 @@ void SDP_Solver::step(
     auto &predictor_timer(
       timers.add_and_start("run.step.computeSearchDirection(betaPredictor)"));
 
+	{
+		El::BigFloat primal_residue_p_2;
+		primal_residue_p_2 = dot(primal_residue_p, primal_residue_p);
+		if (El::mpi::Rank() == 0)std::cout << "Before Predictor p.p : " << primal_residue_p_2 << "\n";
+	}
+
     // Compute the predictor solution for (dx, dX, dy, dY)
     beta_predictor
       = predictor_centering_parameter(parameters, is_primal_and_dual_feasible);
-
-	compute_beta_for_finiteMuTarget(parameters, mu, beta_predictor);
-
     compute_search_direction(block_info, sdp, *this, schur_complement_cholesky,
                              schur_off_diagonal, X_cholesky, beta_predictor,
                              mu, primal_residue_p, false, Q, dx, dX, dy, dY);
     predictor_timer.stop();
+
+	{
+		El::BigFloat primal_residue_p_2;
+		primal_residue_p_2 = dot(primal_residue_p, primal_residue_p);
+		if (El::mpi::Rank() == 0)std::cout << "After Predictor p.p : " << primal_residue_p_2 << "\n";
+
+		El::BigFloat dx2, dy2;
+		dx2 = dot(dx, dx);
+		dy2 = dot(dy, dy);
+		if (El::mpi::Rank() == 0)std::cout << "Predictor beta : " << beta_predictor << "\n";
+		if (El::mpi::Rank() == 0)std::cout << "Predictor : |dx.dx|=" << dx2 <<
+			", |dy.dy|=" << dy2 << "\n";
+	}
 
     // Compute the corrector solution for (dx, dX, dy, dY)
     auto &corrector_timer(
@@ -133,11 +153,23 @@ void SDP_Solver::step(
       parameters, X, dX, Y, dY, mu, is_primal_and_dual_feasible,
       total_psd_rows);
 
-	compute_beta_for_finiteMuTarget(parameters, mu, beta_corrector);
-
     compute_search_direction(block_info, sdp, *this, schur_complement_cholesky,
                              schur_off_diagonal, X_cholesky, beta_corrector,
                              mu, primal_residue_p, true, Q, dx, dX, dy, dY);
+
+	{
+		El::BigFloat primal_residue_p_2;
+		primal_residue_p_2 = dot(primal_residue_p, primal_residue_p);
+		if (El::mpi::Rank() == 0)std::cout << "After Corrector p.p : " << primal_residue_p_2 << "\n";
+
+		El::BigFloat dx2, dy2;
+		dx2 = dot(dx, dx);
+		dy2 = dot(dy, dy);
+		if (El::mpi::Rank() == 0)std::cout << "Corrector beta : " << beta_corrector << "\n";
+		if (El::mpi::Rank() == 0)std::cout << "Corrector : |dx.dx|=" << dx2 <<
+			", |dy.dy|=" << dy2 << "\n";
+	}
+
     corrector_timer.stop();
   }
   // Compute step-lengths that preserve positive definiteness of X, Y
@@ -148,6 +180,12 @@ void SDP_Solver::step(
   dual_step_length
     = step_length(Y_cholesky, dY, parameters.step_length_reduction,
                   "run.step.stepLength(YCholesky)", timers);
+
+
+  El::BigFloat primal_step_maxlength, dual_step_maxlength;
+
+  primal_step_maxlength = max_step_length(X_cholesky, dX, "run.step.stepLength(XCholesky)", timers);
+  dual_step_maxlength = max_step_length(Y_cholesky, dY, "run.step.stepLength(YCholesky)", timers);
 
   // If our problem is both dual-feasible and primal-feasible,
   // ensure we're following the true Newton direction.
@@ -174,5 +212,16 @@ void SDP_Solver::step(
   dY *= dual_step_length;
 
   Y += dY;
+
+
+  //////////////// debug Slater /////////////
+
+  compute_R_error(total_psd_rows, X, Y, R_error);
+
+  if (El::mpi::Rank() == 0)std::cout << "Rerr=" << R_error << "\n";
+
+  if (El::mpi::Rank() == 0)std::cout << "max_p_step=" << primal_step_maxlength <<
+	  ", max_d_step=" << dual_step_maxlength << "\n";
+
   step_timer.stop();
 }

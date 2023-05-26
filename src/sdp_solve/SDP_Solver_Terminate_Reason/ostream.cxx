@@ -35,10 +35,6 @@ operator<<(std::ostream &os, const SDP_Solver_Terminate_Reason &r)
     case SDP_Solver_Terminate_Reason::DualStepTooSmall:
       os << "dual step too small";
       break;
-
-	case SDP_Solver_Terminate_Reason::FiniteMuThresholdMeet:
-		os << "found finite mu solution";
-		break;
     }
   return os;
 }
