@@ -57,6 +57,9 @@ void compute_primal_residues_and_error_p_b_Bx(const Block_Info &block_info,
                                               Block_Vector &primal_residue_p,
                                               El::BigFloat &primal_error_p);
 
+
+El::BigFloat dot(const Block_Vector &A, const Block_Vector &B);
+
 SDP_Solver_Terminate_Reason
 SDP_Solver::run(const Solver_Parameters &parameters,
                 const Verbosity &verbosity,
@@ -146,6 +149,12 @@ SDP_Solver::run(const Solver_Parameters &parameters,
       Block_Vector primal_residue_p(y);
       compute_primal_residues_and_error_p_b_Bx(
         block_info, sdp, x, primal_residue_p, primal_error_p);
+
+	  {
+		  El::BigFloat primal_residue_p_2;
+		  primal_residue_p_2 = dot(primal_residue_p, primal_residue_p);
+		  if (El::mpi::Rank() == 0)std::cout << "After compute_primal_residues_and_error_p_b_Bx p.p : " << primal_residue_p_2 << "\n";
+	  }
 
       bool terminate_now, is_primal_and_dual_feasible;
       compute_feasible_and_termination(

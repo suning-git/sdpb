@@ -101,7 +101,7 @@ public:
         // We can not use El::MakeSymmetric() because that just copies
         // the lower part to the upper part.  We need to average the
         // upper and lower parts.
-        block *= 0.5;
+        block *= El::BigFloat("0.5");
         El::DistMatrix<El::BigFloat> transpose(block.Grid());
         El::Transpose(block, transpose, false);
         block += transpose;

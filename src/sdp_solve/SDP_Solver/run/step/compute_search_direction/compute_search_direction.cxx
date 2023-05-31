@@ -45,6 +45,8 @@ void solve_schur_complement_equation(
 
 El::BigFloat dot(const Block_Vector &A, const Block_Vector &B);
 
+void Block_Vector_dot(const Block_Vector &dy, El::BigFloat & dysquare);
+
 void compute_search_direction(
   const Block_Info &block_info, const SDP &sdp, const SDP_Solver &solver,
   const Block_Diagonal_Matrix &schur_complement_cholesky,
@@ -77,23 +79,27 @@ void compute_search_direction(
   // dy[n] = dualObjective[n] - (FreeVarMatrix^T x)_n
   compute_schur_RHS(block_info, sdp, solver.dual_residues, Z, dx);
   dy=primal_residue_p;
-
-  if (is_corrector_phase)
+  
+  
+{
+      El::BigFloat dx2, dy2, dy2crt;
+      dx2 = dot(dx, dx);
+      dy2 = dot(dy, dy);
+      Block_Vector_dot(dy, dy2crt);
+      
+        if (is_corrector_phase)
   {
-	  El::BigFloat dx2, dy2;
-	  dx2 = dot(dx, dx);
-	  dy2 = dot(dy, dy);
-	  if (El::mpi::Rank() == 0)std::cout << "Corrector RHS : |dx.dx|=" << dx2 <<
-		  ", |dy.dy|=" << dy2 << "\n";
+      if (El::mpi::Rank() == 0)std::cout << "Corrector RHS: |dx.dx|=" << dx2 <<
+         ", |dy.dy|=" << dy2 << ", |dy.dy|_crt=" << dy2crt << "\n";
   }
   else
   {
-	  El::BigFloat dx2, dy2;
-	  dx2 = dot(dx, dx);
-	  dy2 = dot(dy, dy);
-	  if (El::mpi::Rank() == 0)std::cout << "Predictor RHS : |dx.dx|=" << dx2 <<
-		  ", |dy.dy|=" << dy2 << "\n";
+      if (El::mpi::Rank() == 0)std::cout << "Predictor RHS: |dx.dx|=" << dx2 <<
+         ", |dy.dy|=" << dy2 << ", |dy.dy|_crt=" << dy2crt << "\n";
   }
+}
+
+
 
   // Solve for dx, dy in-place
   solve_schur_complement_equation(schur_complement_cholesky,
@@ -109,4 +115,35 @@ void compute_search_direction(
   cholesky_solve(X_cholesky, dY);
   dY.symmetrize();
   dY *= El::BigFloat(-1);
+}
+
+
+
+void compute_minus_d_minus_TrApZ(
+	const Block_Info &block_info, const SDP &sdp, const SDP_Solver &solver,
+	const Block_Diagonal_Matrix &X_cholesky, const El::BigFloat beta,
+	const El::BigFloat &mu,
+	const bool &is_corrector_phase,
+	Block_Vector &dx, const Block_Diagonal_Matrix &dX, const Block_Diagonal_Matrix &dY, Block_Diagonal_Matrix &Z)
+{
+	// R = beta mu I - X Y (predictor phase)
+	// R = beta mu I - X Y - dX dY (corrector phase)
+	Block_Diagonal_Matrix R(solver.X);
+
+	scale_multiply_add(El::BigFloat(-1), solver.X, solver.Y, El::BigFloat(0), R);
+	if (is_corrector_phase)
+	{
+		scale_multiply_add(El::BigFloat(-1), dX, dY, El::BigFloat(1), R);
+	}
+	R.add_diagonal(beta * mu);
+
+	// Z = Symmetrize(X^{-1} (PrimalResidues Y - R))
+	multiply(solver.primal_residues, solver.Y, Z);
+	Z -= R;
+	cholesky_solve(X_cholesky, Z);
+	Z.symmetrize();
+
+	// dx[p] = -dual_residues[p] - Tr(A_p Z)
+	// dy[n] = dualObjective[n] - (FreeVarMatrix^T x)_n
+	compute_schur_RHS(block_info, sdp, solver.dual_residues, Z, dx);
 }

@@ -50,6 +50,116 @@ El::BigFloat max_step_length(const Block_Diagonal_Matrix &MCholesky,
 
 El::BigFloat dot(const Block_Vector &A, const Block_Vector &B);
 
+El::BigFloat min_eigenvalue(Block_Diagonal_Matrix &A);
+
+void Block_Vector_dot(const Block_Vector &dy, El::BigFloat & dysquare)
+{
+  //Block_Vector dy(dy_org);
+  
+  int64_t height=dy.blocks.front().LocalHeight();
+  
+  El::DistMatrix<El::BigFloat> dy_dist;
+  Zeros(dy_dist, height, 1);
+  {
+    El::Matrix<El::BigFloat> dy_sum;
+    Zeros(dy_sum, height, 1);
+
+    for(size_t block = 0; block < dy.blocks.size(); ++block)
+      {
+        // Locally sum contributions to dy
+        for(int64_t row = 0; row < dy.blocks[block].LocalHeight(); ++row)
+          {
+            int64_t global_row(dy.blocks[block].GlobalRow(row));
+            for(int64_t column = 0; column < dy.blocks[block].LocalWidth();
+                ++column)
+              {
+                int64_t global_column(dy.blocks[block].GlobalCol(column));
+                dy_sum(global_row, global_column)
+                  += dy.blocks[block].GetLocal(row, column);
+              }
+          }
+      }
+
+    // Send out updates for dy
+    El::BigFloat zero(0);
+    for(int64_t row = 0; row < dy_sum.Height(); ++row)
+      for(int64_t column = 0; column < dy_sum.Width(); ++column)
+        {
+          if(dy_sum(row, column) != zero)
+            {
+              dy_dist.QueueUpdate(row, column, dy_sum(row, column));
+            }
+        }
+  }
+  dy_dist.ProcessQueues();
+  
+    // Get the max error.
+  El::BigFloat local_primal_error(0);
+  for(int64_t row = 0; row < dy_dist.LocalHeight(); ++row)
+    for(int64_t column = 0; column < dy_dist.LocalWidth();
+        ++column)
+      {
+        local_primal_error
+          = std::max(local_primal_error,
+                     El::Abs(dy_dist.GetLocal(row, column)));
+      }
+
+  El::BigFloat maxvalue = El::mpi::AllReduce(local_primal_error, El::mpi::MAX, El::mpi::COMM_WORLD);
+  
+  El::BigFloat local_sum = Dotu(dy_dist, dy_dist);
+  
+  //std::cout << "rank" << El::mpi::Rank() << " dot(p.p)=" << local_sum << "\n";
+  
+  //El::BigFloat p2 = El::mpi::AllReduce(local_sum, El::mpi::COMM_WORLD);
+  //if (El::mpi::Rank() == 0)std::cout << "primal_error^2 = " << p2 << "\n";
+  
+
+  dysquare=local_sum; // it seems the value is the same for all ranks.
+}
+ 
+
+
+void compute_schur_complement(
+	const Block_Info &block_info,
+	const std::array<
+	std::vector<std::vector<std::vector<El::DistMatrix<El::BigFloat>>>>, 2>
+	&A_X_inv,
+	const std::array<
+	std::vector<std::vector<std::vector<El::DistMatrix<El::BigFloat>>>>, 2>
+	&A_Y,
+	Block_Diagonal_Matrix &schur_complement, Timers &timers);
+
+
+void compute_Sx(
+	const Block_Info &block_info, Block_Diagonal_Matrix &schur_complement, const Block_Vector &x, Block_Vector &result);
+void compute_By(
+	const Block_Info &block_info, const SDP &sdp, const Block_Vector &y, Block_Vector &result);
+void compute_minus_d_minus_TrApZ(
+	const Block_Info &block_info, const SDP &sdp, const SDP_Solver &solver,
+	const Block_Diagonal_Matrix &X_cholesky, const El::BigFloat beta,
+	const El::BigFloat &mu,
+	const bool &is_corrector_phase,
+	Block_Vector &dx, const Block_Diagonal_Matrix &dX, const Block_Diagonal_Matrix &dY, Block_Diagonal_Matrix &Z);
+
+void Block_Vector_plus_equal(Block_Vector &B, const Block_Vector &A);
+void Block_Vector_minus_equal(Block_Vector &B, const Block_Vector &A);
+El::BigFloat Block_Vector_p_max(const Block_Info &block_info, const Block_Vector &Vp);
+
+void compute_trAp_Z(const Block_Info &block_info, const SDP &sdp,
+	const Block_Diagonal_Matrix &Z,
+	Block_Vector &result);
+
+void compute_trA_Y_V2(
+	const Block_Info &block_info, const SDP &sdp,
+	const std::array<
+	std::vector<std::vector<std::vector<El::DistMatrix<El::BigFloat>>>>, 2>
+	&A_Y,
+	Block_Vector &result);
+
+El::BigFloat compute_Block_Vector_norm2(const Block_Info &block_info, const Block_Vector &vec);
+
+El::BigFloat Block_Vector_p_max_V2(const Block_Info &block_info, const Block_Vector &vec);
+
 void SDP_Solver::step(
   const Solver_Parameters &parameters, const std::size_t &total_psd_rows,
   const bool &is_primal_and_dual_feasible, const Block_Info &block_info,
@@ -105,6 +215,14 @@ void SDP_Solver::step(
                                        schur_complement_cholesky,
                                        schur_off_diagonal, Q, timers);
 
+	///////// compute S_ij for debug purpose ///////////////////
+	Block_Diagonal_Matrix schur_complement(
+		block_info.schur_block_sizes(), block_info.block_indices,
+		block_info.num_points.size(), grid);
+	compute_schur_complement(block_info, A_X_inv, A_Y, schur_complement,
+		timers);
+	////////////////////////////////////////////////////////////
+
     // Compute the complementarity mu = Tr(X Y)/X.dim
     auto &frobenius_timer(
       timers.add_and_start("run.step.frobenius_product_symmetric"));
@@ -119,11 +237,12 @@ void SDP_Solver::step(
     auto &predictor_timer(
       timers.add_and_start("run.step.computeSearchDirection(betaPredictor)"));
 
-	{
-		El::BigFloat primal_residue_p_2;
-		primal_residue_p_2 = dot(primal_residue_p, primal_residue_p);
-		if (El::mpi::Rank() == 0)std::cout << "Before Predictor p.p : " << primal_residue_p_2 << "\n";
-	}
+ {
+ 		El::BigFloat primal_residue_p_2;
+		Block_Vector_dot(primal_residue_p, primal_residue_p_2);
+   
+  	if (El::mpi::Rank() == 0)std::cout << "primal_residue_p^2 =" << primal_residue_p_2 << "\n";
+ }
 
     // Compute the predictor solution for (dx, dX, dy, dY)
     beta_predictor
@@ -133,17 +252,63 @@ void SDP_Solver::step(
                              mu, primal_residue_p, false, Q, dx, dX, dy, dY);
     predictor_timer.stop();
 
+	// try to check Sdx
 	{
-		El::BigFloat primal_residue_p_2;
-		primal_residue_p_2 = dot(primal_residue_p, primal_residue_p);
-		if (El::mpi::Rank() == 0)std::cout << "After Predictor p.p : " << primal_residue_p_2 << "\n";
+		Block_Vector Bdy(x);
+		compute_By(block_info, sdp, dy, Bdy);
 
-		El::BigFloat dx2, dy2;
+		Block_Vector minus_d_minus_TrApZBdy(x);
+		Block_Diagonal_Matrix Z(X);
+		compute_minus_d_minus_TrApZ(block_info, sdp, *this, X_cholesky, beta_predictor,
+			mu, false, minus_d_minus_TrApZBdy, dX, dY, Z);
+
+		Block_Vector Sdx(x);
+		compute_Sx(block_info, schur_complement, dx, Sdx);
+
+		Block_Vector result_test(Sdx);
+		Block_Vector_minus_equal(result_test, Bdy);
+		Block_Vector_minus_equal(result_test, minus_d_minus_TrApZBdy);
+
+		El::BigFloat result_max = Block_Vector_p_max(block_info, result_test);
+
+		if (El::mpi::Rank() == 0)std::cout << "[Predictor] Sdx-Bdy+d+tr(AZ)=" << result_max << "\n";
+
+		Block_Diagonal_Matrix dY_plus_Z(dY);
+		dY_plus_Z += Z;
+		Block_Vector trAp_dY_plus_Z(x);
+
+		compute_trAp_Z(block_info, sdp, dY_plus_Z, trAp_dY_plus_Z);
+
+		Block_Vector result_test2(trAp_dY_plus_Z);
+		Block_Vector_plus_equal(result_test2, Sdx);
+
+		El::BigFloat result2_max = Block_Vector_p_max(block_info, result_test2);
+
+		if (El::mpi::Rank() == 0)std::cout << "[Predictor] tr(A(dY+Z)+Sdx)=" << result2_max << "\n";
+	}
+
+	{   
+   /*
+    Block_Vector dy_plus_p(dy);
+    for(size_t block = 0; block < dy.blocks.size(); ++block)
+    {
+      El::Axpy(1, primal_residue_p.blocks[block], dy.blocks[block]);
+    }
+    El::BigFloat test=dot(dy_plus_p, dy_plus_p);
+    if (El::mpi::Rank() == 0)std::cout << "compute dy+p :" << test << "\n";
+    */
+
+		El::BigFloat dx2, dy2, dy2crt;
 		dx2 = dot(dx, dx);
 		dy2 = dot(dy, dy);
-		if (El::mpi::Rank() == 0)std::cout << "Predictor beta : " << beta_predictor << "\n";
+		Block_Vector_dot(dy, dy2crt);
+
+		El::BigFloat dx2_V2 = compute_Block_Vector_norm2(block_info, dx);
+		El::BigFloat dy2_V2 = compute_Block_Vector_norm2(block_info, dy);
+
 		if (El::mpi::Rank() == 0)std::cout << "Predictor : |dx.dx|=" << dx2 <<
-			", |dy.dy|=" << dy2 << "\n";
+			", |dy.dy|=" << dy2 << ", |dy.dy|_crt=" << dy2crt <<
+			", dx2_V2=" << dx2_V2 << ", dy2_V2=" << dy2_V2 << "\n";
 	}
 
     // Compute the corrector solution for (dx, dX, dy, dY)
@@ -153,21 +318,152 @@ void SDP_Solver::step(
       parameters, X, dX, Y, dY, mu, is_primal_and_dual_feasible,
       total_psd_rows);
 
-    compute_search_direction(block_info, sdp, *this, schur_complement_cholesky,
-                             schur_off_diagonal, X_cholesky, beta_corrector,
-                             mu, primal_residue_p, true, Q, dx, dX, dy, dY);
+    //compute_search_direction(block_info, sdp, *this, schur_complement_cholesky,
+    //                         schur_off_diagonal, X_cholesky, beta_corrector,
+    //                         mu, primal_residue_p, true, Q, dx, dX, dy, dY);
 
 	{
-		El::BigFloat primal_residue_p_2;
-		primal_residue_p_2 = dot(primal_residue_p, primal_residue_p);
-		if (El::mpi::Rank() == 0)std::cout << "After Corrector p.p : " << primal_residue_p_2 << "\n";
+		Block_Vector minus_d_minus_TrApZBdy(x);
+		Block_Diagonal_Matrix Z(X);
+		compute_minus_d_minus_TrApZ(block_info, sdp, *this, X_cholesky, beta_corrector,
+			mu, true, minus_d_minus_TrApZBdy, dX, dY, Z);
 
-		El::BigFloat dx2, dy2;
+		compute_search_direction(block_info, sdp, *this, schur_complement_cholesky,
+		                         schur_off_diagonal, X_cholesky, beta_corrector,
+		                         mu, primal_residue_p, true, Q, dx, dX, dy, dY);
+
+		Block_Vector Bdy(x);
+		compute_By(block_info, sdp, dy, Bdy);
+
+		Block_Vector Sdx(x);
+		compute_Sx(block_info, schur_complement, dx, Sdx);
+
+		Block_Vector result_test(Sdx);
+		Block_Vector_minus_equal(result_test, Bdy);
+		Block_Vector_minus_equal(result_test, minus_d_minus_TrApZBdy);
+
+		El::BigFloat result_max = Block_Vector_p_max(block_info, result_test);
+		if (El::mpi::Rank() == 0)std::cout << "[Corrector] Sdx-Bdy+d+tr(AZ)=" << result_max << "\n";
+		result_max = Block_Vector_p_max_V2(block_info, result_test);
+		if (El::mpi::Rank() == 0)std::cout << "[Corrector]*Sdx-Bdy+d+tr(AZ)=" << result_max << "\n";
+
+		Block_Diagonal_Matrix dY_plus_Z(dY);
+		dY_plus_Z += Z;
+		Block_Vector trAp_dY_plus_Z(x);
+
+		compute_trAp_Z(block_info, sdp, dY_plus_Z, trAp_dY_plus_Z);
+
+		Block_Vector result_test2(trAp_dY_plus_Z);
+		Block_Vector_plus_equal(result_test2, Sdx);
+
+		El::BigFloat result2_max = Block_Vector_p_max(block_info, result_test2);
+		if (El::mpi::Rank() == 0)std::cout << "[Corrector] tr(A(dY+Z)+Sdx)=" << result2_max << "\n";
+		result2_max = Block_Vector_p_max_V2(block_info, result_test2);
+		if (El::mpi::Rank() == 0)std::cout << "[Corrector]*tr(A(dY+Z)+Sdx)=" << result2_max << "\n";
+
+		Block_Vector trApY(x);
+		compute_trAp_Z(block_info, sdp, Y, trApY);
+		Block_Vector By(x);
+		compute_By(block_info, sdp, y, By);
+		Block_Vector result_old_d(trApY);
+		Block_Vector_plus_equal(result_old_d, By);
+		Block_Vector_minus_equal(result_old_d, sdp.primal_objective_c);
+
+		El::BigFloat result_old_d_max = Block_Vector_p_max(block_info, result_old_d);
+		if (El::mpi::Rank() == 0)std::cout << "[Corrector] tr(Ap Y)+By-c=" << result_old_d_max << "\n";
+		result_old_d_max = Block_Vector_p_max_V2(block_info, result_old_d);
+		if (El::mpi::Rank() == 0)std::cout << "[Corrector]*tr(Ap Y)+By-c=" << result_old_d_max << "\n";
+
+
+		Block_Vector trApY_V2(x);
+
+		compute_trA_Y_V2(block_info, sdp, A_Y, trApY_V2);
+
+		Block_Vector result_old_d_V2(trApY_V2);
+		Block_Vector_plus_equal(result_old_d_V2, By);
+		Block_Vector_minus_equal(result_old_d_V2, sdp.primal_objective_c);
+
+		El::BigFloat result_old_d_V2_max = Block_Vector_p_max(block_info, result_old_d_V2);
+		if (El::mpi::Rank() == 0)std::cout << "[Corrector] V2 : tr(Ap Y)+By-c=" << result_old_d_V2_max << "\n";
+		result_old_d_V2_max = Block_Vector_p_max_V2(block_info, result_old_d_V2);
+		if (El::mpi::Rank() == 0)std::cout << "[Corrector] V2 :*tr(Ap Y)+By-c=" << result_old_d_V2_max << "\n";
+
+		Block_Vector trApY_V2_minus_V1(trApY_V2);
+		Block_Vector_minus_equal(trApY_V2_minus_V1, trApY);
+
+		El::BigFloat trApY_V2_minus_V1_max = Block_Vector_p_max(block_info, trApY_V2_minus_V1);
+		if (El::mpi::Rank() == 0)std::cout << "[Corrector] : tr(Ap Y)_V2 - tr(Ap Y)_V1=" << trApY_V2_minus_V1_max << "\n";
+		trApY_V2_minus_V1_max = Block_Vector_p_max_V2(block_info, trApY_V2_minus_V1);
+		if (El::mpi::Rank() == 0)std::cout << "[Corrector] :*tr(Ap Y)_V2 - tr(Ap Y)_V1=" << trApY_V2_minus_V1_max << "\n";
+		
+		/*
+
+		if (El::mpi::Rank() == 0)std::cout << "----------- debug tr(Ap Y) V2 ---------------" << "\n";
+
+		if (El::mpi::Rank() == 0 || El::mpi::Rank() == 1)
+		{
+			std::cout << "[Rank" << El::mpi::Rank() << "] blocks.size=" << trApY_V2.blocks.size() << "\n";
+
+			auto trApY_block(trApY_V2.blocks.begin());
+			for (auto &block_index : block_info.block_indices)
+			{
+				int blockID = trApY_block - trApY_V2.blocks.begin();
+
+				std::cout << "[Rank" << El::mpi::Rank() << "]" << "block " << blockID
+					<< " height="<< trApY_block->Height() << " width=" << trApY_block->Width() << "\n";
+
+				for (int i = 0; i < trApY_block->Height() && i < 4; i++)
+				{
+					std::cout << "[Rank" << El::mpi::Rank() << "]" << "block " << blockID
+						<< "[" << i << "," << 0 << "]=" << trApY_block->Get(i, 0) << "\n";
+				}
+
+				++trApY_block;
+			}
+		}
+
+		
+
+		if (El::mpi::Rank() == 0)std::cout << "----------- debug tr(Ap Y) V1 ---------------" << "\n";
+
+		if (El::mpi::Rank() == 0 || El::mpi::Rank() == 1)
+		{
+			std::cout << "[Rank" << El::mpi::Rank() << "] blocks.size=" << trApY.blocks.size() << "\n";
+
+			auto trApY_block(trApY.blocks.begin());
+			for (auto &block_index : block_info.block_indices)
+			{
+				int blockID = trApY_block - trApY.blocks.begin();
+
+				std::cout << "[Rank" << El::mpi::Rank() << "]" << "block " << blockID
+					<< " height=" << trApY_block->Height() << " width=" << trApY_block->Width() << "\n";
+
+				for (int i = 0; i < trApY_block->Height() && i < 4; i++)
+				{
+					std::cout << "[Rank" << El::mpi::Rank() << "]" << "block " << blockID
+						<< "[" << 0 << "," << i << "]=" << trApY_block->Get(i, 0) << "\n";
+				}
+				++trApY_block;
+			}
+		}
+
+		if (El::mpi::Rank() == 0)std::cout << "---------------------------------------------" << "\n";
+		*/
+
+	}
+
+
+	{
+		El::BigFloat dx2, dy2, dy2crt;
 		dx2 = dot(dx, dx);
 		dy2 = dot(dy, dy);
-		if (El::mpi::Rank() == 0)std::cout << "Corrector beta : " << beta_corrector << "\n";
+		Block_Vector_dot(dy, dy2crt);
+		El::BigFloat dy2_V2 = compute_Block_Vector_norm2(block_info, dy);
+		El::BigFloat dx2_V2 = compute_Block_Vector_norm2(block_info, dx);
+
 		if (El::mpi::Rank() == 0)std::cout << "Corrector : |dx.dx|=" << dx2 <<
-			", |dy.dy|=" << dy2 << "\n";
+			", |dy.dy|=" << dy2 << ", |dy.dy|_crt=" << dy2crt << 
+			", dx2_V2=" << dx2_V2 << ", dy2_V2=" << dy2_V2 << "\n";
 	}
 
     corrector_timer.stop();
@@ -222,6 +518,15 @@ void SDP_Solver::step(
 
   if (El::mpi::Rank() == 0)std::cout << "max_p_step=" << primal_step_maxlength <<
 	  ", max_d_step=" << dual_step_maxlength << "\n";
+     
+     
+     Block_Diagonal_Matrix X_copy(X), Y_copy(Y);
+     
+     El::BigFloat Xmin=min_eigenvalue(X_copy);
+     El::BigFloat Ymin=min_eigenvalue(Y_copy);
+     
+    if (El::mpi::Rank() == 0)std::cout << "minX=" << Xmin <<
+	  ", Ymin=" << Ymin << "\n";
 
   step_timer.stop();
 }

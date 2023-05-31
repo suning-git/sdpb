@@ -19,6 +19,9 @@ void solve_schur_complement_equation(
 {
   // dx = schur_complement^{-1}.dx
   lower_triangular_solve(schur_complement_cholesky, dx);
+  
+  
+//  std::cout << "rank" << El::mpi::Rank() << " Q.Height = " << Q.Height() << "\n";
 
   El::DistMatrix<El::BigFloat> dy_dist;
   Zeros(dy_dist, Q.Height(), 1);
@@ -31,6 +34,8 @@ void solve_schur_complement_equation(
         Gemv(El::OrientationNS::TRANSPOSE, El::BigFloat(-1),
              schur_off_diagonal.blocks[block], dx.blocks[block],
              El::BigFloat(1), dy.blocks[block]);
+
+//std::cout << "rank" << El::mpi::Rank() << " dy[" << block << "].LocalHeight = " << dy.blocks[block].LocalHeight() << "\n";
 
         // Locally sum contributions to dy
         for(int64_t row = 0; row < dy.blocks[block].LocalHeight(); ++row)
