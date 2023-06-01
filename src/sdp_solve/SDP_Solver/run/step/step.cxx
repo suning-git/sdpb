@@ -52,7 +52,8 @@ El::BigFloat dot(const Block_Vector &A, const Block_Vector &B);
 
 El::BigFloat min_eigenvalue(Block_Diagonal_Matrix &A);
 
-El::BigFloat Block_Vector_dot(const Block_Vector &dy);
+El::BigFloat Block_Vector_sum_dot(const Block_Vector &dy);
+El::BigFloat Block_Vector_sum_max(const Block_Vector &dy);
 
 void compute_schur_complement(
 	const Block_Info &block_info,
@@ -90,8 +91,6 @@ void compute_trA_Y_V2(
 	std::vector<std::vector<std::vector<El::DistMatrix<El::BigFloat>>>>, 2>
 	&A_Y,
 	Block_Vector &result);
-
-El::BigFloat compute_Block_Vector_norm2(const Block_Info &block_info, const Block_Vector &vec);
 
 El::BigFloat Block_Vector_p_max_V2(const Block_Info &block_info, const Block_Vector &vec);
 El::BigFloat Block_Vector_p_max_V3(const Block_Info &block_info, Block_Vector &vec);
@@ -178,12 +177,10 @@ void SDP_Solver::step(
     auto &predictor_timer(
       timers.add_and_start("run.step.computeSearchDirection(betaPredictor)"));
 
- {
- 		El::BigFloat primal_residue_p_2;
-		primal_residue_p_2 = Block_Vector_dot(primal_residue_p);
-   
-  	if (El::mpi::Rank() == 0)std::cout << "primal_residue_p^2 =" << primal_residue_p_2 << "\n";
- }
+	{
+ 		El::BigFloat primal_residue_p_2 = Block_Vector_sum_max(primal_residue_p);
+		if (El::mpi::Rank() == 0)std::cout << "Block_Vector_sum_max(primal_residue_p) =" << primal_residue_p_2 << "\n";
+	}
 
     // Compute the predictor solution for (dx, dX, dy, dY)
     beta_predictor
@@ -239,17 +236,14 @@ void SDP_Solver::step(
     if (El::mpi::Rank() == 0)std::cout << "compute dy+p :" << test << "\n";
     */
 
-		El::BigFloat dx2, dy2, dy2crt;
-		dx2 = dot(dx, dx);
-		dy2 = dot(dy, dy);
-		dy2crt = Block_Vector_dot(dy);
-
-		El::BigFloat dx2_V2 = Block_Vector_Square(block_info, dx);
-		El::BigFloat dy2_V2 = Block_Vector_Square(block_info, dy);
+		El::BigFloat dx2 = dot(dx, dx);
+		El::BigFloat dy2 = dot(dy, dy);
+		El::BigFloat dx2crt = Block_Vector_sum_dot(dx);
+		El::BigFloat dy2crt = Block_Vector_sum_dot(dy);
 
 		if (El::mpi::Rank() == 0)std::cout << "Predictor : |dx.dx|=" << dx2 <<
-			", |dy.dy|=" << dy2 << ", |dy.dy|_crt=" << dy2crt <<
-			", dx2_V2=" << dx2_V2 << ", dy2_V2=" << dy2_V2 << "\n";
+			", sum_dot(dx)=" << dx2crt <<
+			", |dy.dy|=" << dy2 << ", sum_dot(dy)=" << dy2crt << "\n";
 	}
 
     // Compute the corrector solution for (dx, dX, dy, dY)
@@ -285,7 +279,7 @@ void SDP_Solver::step(
 
 		El::BigFloat result_max = Block_Vector_p_max(block_info, result_test);
 		if (El::mpi::Rank() == 0)std::cout << "[Corrector] Sdx-Bdy+d+tr(AZ)=" << result_max << "\n";
-		result_max = Block_Vector_p_max_V3(block_info, result_test);
+		result_max = Block_Vector_sum_max(result_test);
 		if (El::mpi::Rank() == 0)std::cout << "[Corrector]#Sdx-Bdy+d+tr(AZ)=" << result_max << "\n";
 
 		Block_Diagonal_Matrix dY_plus_Z(dY);
@@ -299,7 +293,7 @@ void SDP_Solver::step(
 
 		El::BigFloat result2_max = Block_Vector_p_max(block_info, result_test2);
 		if (El::mpi::Rank() == 0)std::cout << "[Corrector] tr(A(dY+Z)+Sdx)=" << result2_max << "\n";
-		result2_max = Block_Vector_p_max_V3(block_info, result_test2);
+		result2_max = Block_Vector_sum_max(result_test2);
 		if (El::mpi::Rank() == 0)std::cout << "[Corrector]#tr(A(dY+Z)+Sdx)=" << result2_max << "\n";
 
 		Block_Vector trApY(x);
@@ -312,7 +306,7 @@ void SDP_Solver::step(
 
 		El::BigFloat result_old_d_max = Block_Vector_p_max(block_info, result_old_d);
 		if (El::mpi::Rank() == 0)std::cout << "[Corrector] tr(Ap Y)+By-c=" << result_old_d_max << "\n";
-		result_old_d_max = Block_Vector_p_max_V3(block_info, result_old_d);
+		result_old_d_max = Block_Vector_sum_max(result_old_d);
 		if (El::mpi::Rank() == 0)std::cout << "[Corrector]#tr(Ap Y)+By-c=" << result_old_d_max << "\n";
 
 
@@ -326,7 +320,7 @@ void SDP_Solver::step(
 
 		El::BigFloat result_old_d_V2_max = Block_Vector_p_max(block_info, result_old_d_V2);
 		if (El::mpi::Rank() == 0)std::cout << "[Corrector] V2 : tr(Ap Y)+By-c=" << result_old_d_V2_max << "\n";
-		result_old_d_V2_max = Block_Vector_p_max_V3(block_info, result_old_d_V2);
+		result_old_d_V2_max = Block_Vector_sum_max(result_old_d_V2);
 		if (El::mpi::Rank() == 0)std::cout << "[Corrector] V2 :#tr(Ap Y)+By-c=" << result_old_d_V2_max << "\n";
 
 		Block_Vector trApY_V2_minus_V1(trApY_V2); 
@@ -334,9 +328,8 @@ void SDP_Solver::step(
 
 		El::BigFloat trApY_V2_minus_V1_max = Block_Vector_p_max(block_info, trApY_V2_minus_V1);
 		if (El::mpi::Rank() == 0)std::cout << "[Corrector] : tr(Ap Y)_V2 - tr(Ap Y)_V1=" << trApY_V2_minus_V1_max << "\n";
-		trApY_V2_minus_V1_max = Block_Vector_p_max_V2(block_info, trApY_V2_minus_V1);
-		
-		//std::cout << "Rank" << El::mpi::Rank() << "[Corrector] :*tr(Ap Y)_V2 - tr(Ap Y)_V1=" << trApY_V2_minus_V1_max << "\n";
+		trApY_V2_minus_V1_max = Block_Vector_sum_max(trApY_V2_minus_V1);
+		if (El::mpi::Rank() == 0)std::cout << "[Corrector] :#tr(Ap Y)_V2 - tr(Ap Y)_V1=" << trApY_V2_minus_V1_max << "\n";
 		
 		
 
@@ -397,16 +390,14 @@ void SDP_Solver::step(
 
 
 	{
-		El::BigFloat dx2, dy2, dy2crt;
-		dx2 = dot(dx, dx);
-		dy2 = dot(dy, dy);
-		dy2crt = Block_Vector_dot(dy);
-		El::BigFloat dy2_V2 = compute_Block_Vector_norm2(block_info, dy);
-		El::BigFloat dx2_V2 = compute_Block_Vector_norm2(block_info, dx);
+		El::BigFloat dx2 = dot(dx, dx);
+		El::BigFloat dy2 = dot(dy, dy);
+		El::BigFloat dx2crt = Block_Vector_sum_dot(dx);
+		El::BigFloat dy2crt = Block_Vector_sum_dot(dy);
 
 		if (El::mpi::Rank() == 0)std::cout << "Corrector : |dx.dx|=" << dx2 <<
-			", |dy.dy|=" << dy2 << ", |dy.dy|_crt=" << dy2crt << 
-			", dx2_V2=" << dx2_V2 << ", dy2_V2=" << dy2_V2 << "\n";
+			", sum_dot(dx)=" << dx2crt <<
+			", |dy.dy|=" << dy2 << ", sum_dot(dy)=" << dy2crt << "\n";
 	}
 
     corrector_timer.stop();

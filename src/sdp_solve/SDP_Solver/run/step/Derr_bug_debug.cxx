@@ -135,7 +135,7 @@ void compute_trAp_Z(const Block_Info &block_info, const SDP &sdp,
 /////////////////////////////////////////////////////////////////////////////
 
 // this function is based on solve_schur_complement_equation
-El::BigFloat Block_Vector_dot(const Block_Vector &dy)
+El::BigFloat Block_Vector_sum_dot(const Block_Vector &dy)
 {
 	//Block_Vector dy(dy_org);
 
@@ -176,20 +176,6 @@ El::BigFloat Block_Vector_dot(const Block_Vector &dy)
 	}
 	dy_dist.ProcessQueues();
 
-	/*
-	// Get the max error.
-	El::BigFloat local_primal_error(0);
-	for(int64_t row = 0; row < dy_dist.LocalHeight(); ++row)
-	for(int64_t column = 0; column < dy_dist.LocalWidth();
-	++column)
-	{
-	local_primal_error
-	= std::max(local_primal_error,
-	El::Abs(dy_dist.GetLocal(row, column)));
-	}
-	El::BigFloat maxvalue = El::mpi::AllReduce(local_primal_error, El::mpi::MAX, El::mpi::COMM_WORLD);
-	*/
-
 	El::BigFloat local_primal_error(0);
 	for (int64_t row = 0; row < dy_dist.LocalHeight(); ++row)
 		for (int64_t column = 0; column < dy_dist.LocalWidth();
@@ -211,6 +197,61 @@ El::BigFloat Block_Vector_dot(const Block_Vector &dy)
 	return maxvalue; // it seems the value is the same for all ranks.
 }
 
+// this function is based on solve_schur_complement_equation
+El::BigFloat Block_Vector_sum_max(const Block_Vector &dy)
+{
+	//Block_Vector dy(dy_org);
+
+	int64_t height = dy.blocks.front().LocalHeight();
+
+	El::DistMatrix<El::BigFloat> dy_dist;
+	Zeros(dy_dist, height, 1);
+	{
+		El::Matrix<El::BigFloat> dy_sum;
+		Zeros(dy_sum, height, 1);
+
+		for (size_t block = 0; block < dy.blocks.size(); ++block)
+		{
+			// Locally sum contributions to dy
+			for (int64_t row = 0; row < dy.blocks[block].LocalHeight(); ++row)
+			{
+				int64_t global_row(dy.blocks[block].GlobalRow(row));
+				for (int64_t column = 0; column < dy.blocks[block].LocalWidth();
+					++column)
+				{
+					int64_t global_column(dy.blocks[block].GlobalCol(column));
+					dy_sum(global_row, global_column)
+						+= dy.blocks[block].GetLocal(row, column);
+				}
+			}
+		}
+
+		// Send out updates for dy
+		El::BigFloat zero(0);
+		for (int64_t row = 0; row < dy_sum.Height(); ++row)
+			for (int64_t column = 0; column < dy_sum.Width(); ++column)
+			{
+				if (dy_sum(row, column) != zero)
+				{
+					dy_dist.QueueUpdate(row, column, dy_sum(row, column));
+				}
+			}
+	}
+	dy_dist.ProcessQueues();
+
+
+	// Get the max error.
+	El::BigFloat local_primal_error(0);
+	for (int64_t row = 0; row < dy_dist.LocalHeight(); ++row)
+		for (int64_t column = 0; column < dy_dist.LocalWidth(); ++column)
+		{
+			local_primal_error = std::max(local_primal_error, El::Abs(dy_dist.GetLocal(row, column)));
+		}
+
+	El::BigFloat maxvalue = El::mpi::AllReduce(local_primal_error, El::mpi::MAX, El::mpi::COMM_WORLD);
+
+	return maxvalue; // it seems the value is the same for all ranks.
+}
 
 
 
@@ -489,41 +530,5 @@ void compute_Sx(
 		++x_block;
 		++result_block;
 	}
-}
-
-///////////////////////// Block_Vector ////////////////////////////////
-
-// this function is definitely wrong
-El::BigFloat compute_Block_Vector_norm2(const Block_Info &block_info, const Block_Vector &vec)
-{
-	El::BigFloat norm2(0);
-
-	auto vec_block(vec.blocks.begin());
-	for (auto &block_index : block_info.block_indices)
-	{
-		int blockID = vec_block - vec.blocks.begin();
-
-		int height = vec_block->Height();
-		int width = vec_block->Width();
-
-		if (width == 1)
-		{
-			for (int i = 0; i < height; i++)
-				norm2 += (vec_block->Get(i, 0))*(vec_block->Get(i, 0));
-		}
-		else if (height == 1)
-		{
-			for (int i = 0; i < width; i++)
-				norm2 += (vec_block->Get(0, i))*(vec_block->Get(0, i));
-		}
-		else
-		{
-			if (El::mpi::Rank() == 0)std::cout << "compute_Block_Vector_norm2 error : input is not a vector" << "\n";
-			exit(0);
-		}
-
-		++vec_block;
-	}
-	return norm2;
 }
 

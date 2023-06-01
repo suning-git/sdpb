@@ -45,7 +45,7 @@ void solve_schur_complement_equation(
 
 El::BigFloat dot(const Block_Vector &A, const Block_Vector &B);
 
-El::BigFloat Block_Vector_dot(const Block_Vector &dy);
+El::BigFloat Block_Vector_sum_dot(const Block_Vector &dy);
 
 void compute_search_direction(
   const Block_Info &block_info, const SDP &sdp, const SDP_Solver &solver,
@@ -85,7 +85,7 @@ void compute_search_direction(
       El::BigFloat dx2, dy2, dy2crt;
       dx2 = dot(dx, dx);
       dy2 = dot(dy, dy);
-	  dy2crt = Block_Vector_dot(dy);
+	  dy2crt = Block_Vector_sum_dot(dy);
       
         if (is_corrector_phase)
   {
