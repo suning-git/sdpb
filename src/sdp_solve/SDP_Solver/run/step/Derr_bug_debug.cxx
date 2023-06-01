@@ -305,7 +305,7 @@ void Block_Vector_Visit(const Block_Info &block_info, auto &mat, auto operation)
 	}
 }
 
-// I believe this version is correct
+// I believe this version is correct for D-err
 El::BigFloat Block_Vector_p_max_V3(const Block_Info &block_info, Block_Vector &vec)
 {
 	El::BigFloat local_max(0);
