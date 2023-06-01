@@ -52,72 +52,7 @@ El::BigFloat dot(const Block_Vector &A, const Block_Vector &B);
 
 El::BigFloat min_eigenvalue(Block_Diagonal_Matrix &A);
 
-void Block_Vector_dot(const Block_Vector &dy, El::BigFloat & dysquare)
-{
-  //Block_Vector dy(dy_org);
-  
-  int64_t height=dy.blocks.front().LocalHeight();
-  
-  El::DistMatrix<El::BigFloat> dy_dist;
-  Zeros(dy_dist, height, 1);
-  {
-    El::Matrix<El::BigFloat> dy_sum;
-    Zeros(dy_sum, height, 1);
-
-    for(size_t block = 0; block < dy.blocks.size(); ++block)
-      {
-        // Locally sum contributions to dy
-        for(int64_t row = 0; row < dy.blocks[block].LocalHeight(); ++row)
-          {
-            int64_t global_row(dy.blocks[block].GlobalRow(row));
-            for(int64_t column = 0; column < dy.blocks[block].LocalWidth();
-                ++column)
-              {
-                int64_t global_column(dy.blocks[block].GlobalCol(column));
-                dy_sum(global_row, global_column)
-                  += dy.blocks[block].GetLocal(row, column);
-              }
-          }
-      }
-
-    // Send out updates for dy
-    El::BigFloat zero(0);
-    for(int64_t row = 0; row < dy_sum.Height(); ++row)
-      for(int64_t column = 0; column < dy_sum.Width(); ++column)
-        {
-          if(dy_sum(row, column) != zero)
-            {
-              dy_dist.QueueUpdate(row, column, dy_sum(row, column));
-            }
-        }
-  }
-  dy_dist.ProcessQueues();
-  
-    // Get the max error.
-  El::BigFloat local_primal_error(0);
-  for(int64_t row = 0; row < dy_dist.LocalHeight(); ++row)
-    for(int64_t column = 0; column < dy_dist.LocalWidth();
-        ++column)
-      {
-        local_primal_error
-          = std::max(local_primal_error,
-                     El::Abs(dy_dist.GetLocal(row, column)));
-      }
-
-  El::BigFloat maxvalue = El::mpi::AllReduce(local_primal_error, El::mpi::MAX, El::mpi::COMM_WORLD);
-  
-  El::BigFloat local_sum = Dotu(dy_dist, dy_dist);
-  
-  //std::cout << "rank" << El::mpi::Rank() << " dot(p.p)=" << local_sum << "\n";
-  
-  //El::BigFloat p2 = El::mpi::AllReduce(local_sum, El::mpi::COMM_WORLD);
-  //if (El::mpi::Rank() == 0)std::cout << "primal_error^2 = " << p2 << "\n";
-  
-
-  dysquare=local_sum; // it seems the value is the same for all ranks.
-}
- 
-
+El::BigFloat Block_Vector_dot(const Block_Vector &dy);
 
 void compute_schur_complement(
 	const Block_Info &block_info,
@@ -159,6 +94,12 @@ void compute_trA_Y_V2(
 El::BigFloat compute_Block_Vector_norm2(const Block_Info &block_info, const Block_Vector &vec);
 
 El::BigFloat Block_Vector_p_max_V2(const Block_Info &block_info, const Block_Vector &vec);
+El::BigFloat Block_Vector_p_max_V3(const Block_Info &block_info, Block_Vector &vec);
+
+
+void Assert_DistMatrix_Local(const El::DistMatrix<El::BigFloat> & mat, auto message);
+El::BigFloat Block_Vector_Square(const Block_Info &block_info, const Block_Vector &vec);
+
 
 void SDP_Solver::step(
   const Solver_Parameters &parameters, const std::size_t &total_psd_rows,
@@ -239,7 +180,7 @@ void SDP_Solver::step(
 
  {
  		El::BigFloat primal_residue_p_2;
-		Block_Vector_dot(primal_residue_p, primal_residue_p_2);
+		primal_residue_p_2 = Block_Vector_dot(primal_residue_p);
    
   	if (El::mpi::Rank() == 0)std::cout << "primal_residue_p^2 =" << primal_residue_p_2 << "\n";
  }
@@ -301,10 +242,10 @@ void SDP_Solver::step(
 		El::BigFloat dx2, dy2, dy2crt;
 		dx2 = dot(dx, dx);
 		dy2 = dot(dy, dy);
-		Block_Vector_dot(dy, dy2crt);
+		dy2crt = Block_Vector_dot(dy);
 
-		El::BigFloat dx2_V2 = compute_Block_Vector_norm2(block_info, dx);
-		El::BigFloat dy2_V2 = compute_Block_Vector_norm2(block_info, dy);
+		El::BigFloat dx2_V2 = Block_Vector_Square(block_info, dx);
+		El::BigFloat dy2_V2 = Block_Vector_Square(block_info, dy);
 
 		if (El::mpi::Rank() == 0)std::cout << "Predictor : |dx.dx|=" << dx2 <<
 			", |dy.dy|=" << dy2 << ", |dy.dy|_crt=" << dy2crt <<
@@ -344,8 +285,8 @@ void SDP_Solver::step(
 
 		El::BigFloat result_max = Block_Vector_p_max(block_info, result_test);
 		if (El::mpi::Rank() == 0)std::cout << "[Corrector] Sdx-Bdy+d+tr(AZ)=" << result_max << "\n";
-		result_max = Block_Vector_p_max_V2(block_info, result_test);
-		if (El::mpi::Rank() == 0)std::cout << "[Corrector]*Sdx-Bdy+d+tr(AZ)=" << result_max << "\n";
+		result_max = Block_Vector_p_max_V3(block_info, result_test);
+		if (El::mpi::Rank() == 0)std::cout << "[Corrector]#Sdx-Bdy+d+tr(AZ)=" << result_max << "\n";
 
 		Block_Diagonal_Matrix dY_plus_Z(dY);
 		dY_plus_Z += Z;
@@ -358,8 +299,8 @@ void SDP_Solver::step(
 
 		El::BigFloat result2_max = Block_Vector_p_max(block_info, result_test2);
 		if (El::mpi::Rank() == 0)std::cout << "[Corrector] tr(A(dY+Z)+Sdx)=" << result2_max << "\n";
-		result2_max = Block_Vector_p_max_V2(block_info, result_test2);
-		if (El::mpi::Rank() == 0)std::cout << "[Corrector]*tr(A(dY+Z)+Sdx)=" << result2_max << "\n";
+		result2_max = Block_Vector_p_max_V3(block_info, result_test2);
+		if (El::mpi::Rank() == 0)std::cout << "[Corrector]#tr(A(dY+Z)+Sdx)=" << result2_max << "\n";
 
 		Block_Vector trApY(x);
 		compute_trAp_Z(block_info, sdp, Y, trApY);
@@ -371,8 +312,8 @@ void SDP_Solver::step(
 
 		El::BigFloat result_old_d_max = Block_Vector_p_max(block_info, result_old_d);
 		if (El::mpi::Rank() == 0)std::cout << "[Corrector] tr(Ap Y)+By-c=" << result_old_d_max << "\n";
-		result_old_d_max = Block_Vector_p_max_V2(block_info, result_old_d);
-		if (El::mpi::Rank() == 0)std::cout << "[Corrector]*tr(Ap Y)+By-c=" << result_old_d_max << "\n";
+		result_old_d_max = Block_Vector_p_max_V3(block_info, result_old_d);
+		if (El::mpi::Rank() == 0)std::cout << "[Corrector]#tr(Ap Y)+By-c=" << result_old_d_max << "\n";
 
 
 		Block_Vector trApY_V2(x);
@@ -385,23 +326,24 @@ void SDP_Solver::step(
 
 		El::BigFloat result_old_d_V2_max = Block_Vector_p_max(block_info, result_old_d_V2);
 		if (El::mpi::Rank() == 0)std::cout << "[Corrector] V2 : tr(Ap Y)+By-c=" << result_old_d_V2_max << "\n";
-		result_old_d_V2_max = Block_Vector_p_max_V2(block_info, result_old_d_V2);
-		if (El::mpi::Rank() == 0)std::cout << "[Corrector] V2 :*tr(Ap Y)+By-c=" << result_old_d_V2_max << "\n";
+		result_old_d_V2_max = Block_Vector_p_max_V3(block_info, result_old_d_V2);
+		if (El::mpi::Rank() == 0)std::cout << "[Corrector] V2 :#tr(Ap Y)+By-c=" << result_old_d_V2_max << "\n";
 
-		Block_Vector trApY_V2_minus_V1(trApY_V2);
+		Block_Vector trApY_V2_minus_V1(trApY_V2); 
 		Block_Vector_minus_equal(trApY_V2_minus_V1, trApY);
 
 		El::BigFloat trApY_V2_minus_V1_max = Block_Vector_p_max(block_info, trApY_V2_minus_V1);
 		if (El::mpi::Rank() == 0)std::cout << "[Corrector] : tr(Ap Y)_V2 - tr(Ap Y)_V1=" << trApY_V2_minus_V1_max << "\n";
 		trApY_V2_minus_V1_max = Block_Vector_p_max_V2(block_info, trApY_V2_minus_V1);
-		if (El::mpi::Rank() == 0)std::cout << "[Corrector] :*tr(Ap Y)_V2 - tr(Ap Y)_V1=" << trApY_V2_minus_V1_max << "\n";
 		
-		/*
+		//std::cout << "Rank" << El::mpi::Rank() << "[Corrector] :*tr(Ap Y)_V2 - tr(Ap Y)_V1=" << trApY_V2_minus_V1_max << "\n";
+		
+		
 
 		if (El::mpi::Rank() == 0)std::cout << "----------- debug tr(Ap Y) V2 ---------------" << "\n";
 
-		if (El::mpi::Rank() == 0 || El::mpi::Rank() == 1)
-		{
+		//if (El::mpi::Rank() == 0 || El::mpi::Rank() == 1)
+		/*{
 			std::cout << "[Rank" << El::mpi::Rank() << "] blocks.size=" << trApY_V2.blocks.size() << "\n";
 
 			auto trApY_block(trApY_V2.blocks.begin());
@@ -421,8 +363,9 @@ void SDP_Solver::step(
 				++trApY_block;
 			}
 		}
+		*/
 
-		
+		/*
 
 		if (El::mpi::Rank() == 0)std::cout << "----------- debug tr(Ap Y) V1 ---------------" << "\n";
 
@@ -457,7 +400,7 @@ void SDP_Solver::step(
 		El::BigFloat dx2, dy2, dy2crt;
 		dx2 = dot(dx, dx);
 		dy2 = dot(dy, dy);
-		Block_Vector_dot(dy, dy2crt);
+		dy2crt = Block_Vector_dot(dy);
 		El::BigFloat dy2_V2 = compute_Block_Vector_norm2(block_info, dy);
 		El::BigFloat dx2_V2 = compute_Block_Vector_norm2(block_info, dx);
 
@@ -528,5 +471,41 @@ void SDP_Solver::step(
     if (El::mpi::Rank() == 0)std::cout << "minX=" << Xmin <<
 	  ", Ymin=" << Ymin << "\n";
 
+	////////////////// check the structure of x /////////////////////
+
+	/*
+	bool fakeblock = !x.blocks.empty() && x.blocks.at(0).Grid().Rank() != 0;
+	bool fakeblock2 = !X.blocks.empty() && X.blocks.at(0).Grid().Rank() != 0;
+
+	for (size_t block = 0; block != x.blocks.size(); ++block)
+	{
+		size_t block_index(block_info.block_indices.at(block));
+		for (size_t psd_block(0); psd_block < 2; ++psd_block)
+		{
+			int blockID_global = 2 * block_index + psd_block;
+			int blockID = 2 * block + psd_block;
+
+			std::cout << "mpi::Rank=" << El::mpi::Rank() <<
+				", fakeQ=" << fakeblock <<
+				", fake2Q=" << fakeblock2 <<
+				", globalID=" << blockID_global <<
+				", localID=" << blockID <<
+				", Grid.Rank=" << x.blocks.at(block).Grid().Rank() << 
+				"\n";
+		}
+	}
+	*/
+
+	/*
+	std::cout << "mpi::Rank=" << El::mpi::Rank() <<
+		"len(block_indices)=" << block_info.block_indices.size() <<
+		", len(x.blocks)=" << x.blocks.size() <<
+		", len(y.blocks)=" << y.blocks.size() <<
+		", len(X.blocks)=" << X.blocks.size() <<
+		", len(Y.blocks)=" << Y.blocks.size() <<
+		"\n";
+		*/
+
   step_timer.stop();
 }
+

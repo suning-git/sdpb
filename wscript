@@ -51,7 +51,6 @@ def build(bld):
                        'src/sdp_solve/SDP_Solver/run/compute_dual_residues_and_error.cxx',
                        'src/sdp_solve/SDP_Solver/run/compute_primal_residues_and_error_P_Ax_X.cxx',
                        'src/sdp_solve/SDP_Solver/run/compute_primal_residues_and_error_p_b_Bx.cxx',
-                       'src/sdp_solve/SDP_Solver/run/compute_R_error.cxx',
                        'src/sdp_solve/SDP_Solver/run/compute_objectives/compute_objectives.cxx',
                        'src/sdp_solve/SDP_Solver/run/compute_objectives/dot.cxx',
                        'src/sdp_solve/SDP_Solver/run/compute_bilinear_pairings/compute_bilinear_pairings.cxx',
@@ -61,6 +60,8 @@ def build(bld):
                        'src/sdp_solve/SDP_Solver/run/print_header.cxx',
                        'src/sdp_solve/SDP_Solver/run/print_iteration.cxx',
                        'src/sdp_solve/SDP_Solver/run/step/step.cxx',
+                       'src/sdp_solve/SDP_Solver/run/step/compute_R_error.cxx',
+                       'src/sdp_solve/SDP_Solver/run/step/Derr_bug_debug.cxx',
                        'src/sdp_solve/SDP_Solver/run/step/initialize_schur_complement_solver/initialize_schur_complement_solver.cxx',
                        'src/sdp_solve/SDP_Solver/run/step/initialize_schur_complement_solver/compute_schur_complement.cxx',
                        'src/sdp_solve/SDP_Solver/run/step/initialize_schur_complement_solver/initialize_Q_group.cxx',
@@ -80,8 +81,7 @@ def build(bld):
                        'src/sdp_solve/SDP_Solver_Terminate_Reason/ostream.cxx',
                        'src/sdp_solve/lower_triangular_transpose_solve.cxx',
                        'src/sdp_solve/Block_Diagonal_Matrix/ostream.cxx',
-                       'src/sdp_solve/Write_Solution.cxx',
-                       'src/sdp_solve/compute_lag.cxx']
+                       'src/sdp_solve/Write_Solution.cxx']
 
     bld.stlib(source=sdp_solve_sources,
               target='sdp_solve',
