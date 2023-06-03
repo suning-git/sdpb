@@ -549,7 +549,7 @@ void Block_Vector_minus_equal(Block_Vector &B, const Block_Vector &A)
 //////////////// compute S.x //////////////////////////////
 
 void compute_Sx(
-	const Block_Info &block_info, Block_Diagonal_Matrix &schur_complement, const Block_Vector &x, Block_Vector &result)
+	const Block_Info &block_info, const Block_Diagonal_Matrix &schur_complement, const Block_Vector &x, Block_Vector &result)
 {
 	auto x_block(x.blocks.begin());
 	auto schur_complement_block(schur_complement.blocks.begin());
@@ -748,4 +748,48 @@ El::BigFloat Block_Vector_sum_dot_debug(const Block_Vector &dy)
 		*/
 
 	return globalsum; // it seems the value is the same for all ranks.
+}
+
+void constraint_matrix_weighted_sum(const Block_Info &block_info,
+	const SDP &sdp, const Block_Vector &a,
+	Block_Diagonal_Matrix &Result);
+
+void compute_minus_InvX_Apdx_Y(const Block_Info &block_info, const SDP &sdp, const Block_Vector &dx,
+	const Block_Diagonal_Matrix &X_cholesky, const Block_Diagonal_Matrix &Y, Block_Diagonal_Matrix &result)
+{
+	Block_Diagonal_Matrix Apdx(Y);
+	constraint_matrix_weighted_sum(block_info, sdp, dx, Apdx);
+
+	scale_multiply_add(El::BigFloat(-1), Apdx, Y, El::BigFloat(0), result);
+	cholesky_solve(X_cholesky, result);
+	return;
+}
+
+
+////////////////////// check tr(A_i X^-1 (A.dx) Y)  vs  S.dx //////////////////
+
+void compute_tr_A_InvX_Adx_Y(const Block_Info &block_info, const SDP &sdp, const Block_Vector &dx,
+	const Block_Diagonal_Matrix &X_cholesky, const Block_Diagonal_Matrix &Y, Block_Vector &result)
+{
+	Block_Diagonal_Matrix Apdx(Y);
+	constraint_matrix_weighted_sum(block_info, sdp, dx, Apdx);
+
+	Block_Diagonal_Matrix InvX_Adx_Y(Y);
+
+	scale_multiply_add(El::BigFloat(1), Apdx, Y, El::BigFloat(0), InvX_Adx_Y);
+	cholesky_solve(X_cholesky, InvX_Adx_Y);
+
+	compute_trAp_Z(block_info, sdp, InvX_Adx_Y, result);
+}
+
+
+void compute_tr_A_InvX_Adx_Y_vs_Sdx(const Block_Info &block_info, const SDP &sdp, const Block_Vector &dx,
+	const Block_Diagonal_Matrix &X_cholesky, const Block_Diagonal_Matrix &Y, const Block_Diagonal_Matrix &schur_complement, Block_Vector &result)
+{
+	compute_tr_A_InvX_Adx_Y(block_info, sdp, dx, X_cholesky, Y, result);
+
+	Block_Vector Sdx(dx);
+	compute_Sx(block_info, schur_complement, dx, Sdx);
+
+	Block_Vector_minus_equal(result, Sdx);
 }

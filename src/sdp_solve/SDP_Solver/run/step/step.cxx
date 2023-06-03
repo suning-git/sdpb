@@ -67,7 +67,9 @@ void compute_schur_complement(
 
 
 void compute_Sx(
-	const Block_Info &block_info, Block_Diagonal_Matrix &schur_complement, const Block_Vector &x, Block_Vector &result);
+	const Block_Info &block_info, const Block_Diagonal_Matrix &schur_complement, const Block_Vector &x, Block_Vector &result);
+
+
 void compute_By(
 	const Block_Info &block_info, const SDP &sdp, const Block_Vector &y, Block_Vector &result);
 void compute_minus_d_minus_TrApZ(
@@ -106,6 +108,15 @@ void debug_print_blocks_info(const Block_Info &block_info, const std::vector<El:
 void debug_Ap_V1_vs_V2(const Block_Info &block_info, const std::vector<El::DistMatrix<El::BigFloat>> & blocks, const std::string var);
 
 void compute_trAp_Z_V2(const Block_Info &block_info, const SDP &sdp, const Block_Diagonal_Matrix &Z, Block_Vector &result);
+
+void compute_minus_InvX_Apdx_Y(const Block_Info &block_info, const SDP &sdp, const Block_Vector &dx,
+	const Block_Diagonal_Matrix &X_cholesky, const Block_Diagonal_Matrix &Y, Block_Diagonal_Matrix &result);
+
+void compute_tr_A_InvX_Adx_Y(const Block_Info &block_info, const SDP &sdp, const Block_Vector &dx,
+	const Block_Diagonal_Matrix &X_cholesky, const Block_Diagonal_Matrix &Y, Block_Vector &result);
+
+void compute_tr_A_InvX_Adx_Y_vs_Sdx(const Block_Info &block_info, const SDP &sdp, const Block_Vector &dx,
+	const Block_Diagonal_Matrix &X_cholesky, const Block_Diagonal_Matrix &Y, const Block_Diagonal_Matrix &schur_complement, Block_Vector &result);
 
 void SDP_Solver::step(
   const Solver_Parameters &parameters, const std::size_t &total_psd_rows,
@@ -312,7 +323,7 @@ void SDP_Solver::step(
 		Block_Vector_plus_equal(result_test2, Sdx);
 
 		El::BigFloat result2_max = Block_Vector_p_max_V3(block_info, result_test2);
-		if (El::mpi::Rank() == 0)std::cout << "[Corrector] tr(A(dY+Z)+Sdx)=" << result2_max << "\n";
+		if (El::mpi::Rank() == 0)std::cout << "[Corrector] tr(A(dY+Z))+Sdx=" << result2_max << "\n";
 		//result2_max = Block_Vector_sum_max(result_test2);
 		//if (El::mpi::Rank() == 0)std::cout << "[Corrector]#tr(A(dY+Z)+Sdx)=" << result2_max << "\n";
 
@@ -321,8 +332,30 @@ void SDP_Solver::step(
 		Block_Vector trAp_dY_plus_Z_plus_Sdx(trAp_dY_plus_Z_V2);
 		Block_Vector_plus_equal(trAp_dY_plus_Z_plus_Sdx, Sdx);
 		El::BigFloat trAp_dY_plus_Z_plus_Sdx_V2_max = Block_Vector_p_max_V3(block_info, trAp_dY_plus_Z_plus_Sdx);
-		if (El::mpi::Rank() == 0)std::cout << "[Corrector] tr(A(dY+Z)+Sdx)_V2=" << trAp_dY_plus_Z_plus_Sdx_V2_max << "\n";
+		if (El::mpi::Rank() == 0)std::cout << "[Corrector] tr(A(dY+Z))+Sdx_V2=" << trAp_dY_plus_Z_plus_Sdx_V2_max << "\n";
 
+		// check  A(dY+Z)=-X^-1 (A.dx) Y
+		Block_Diagonal_Matrix dY_plus_Z_V3(X);
+		compute_minus_InvX_Apdx_Y(block_info, sdp, dx, X_cholesky, Y, dY_plus_Z_V3);
+		Block_Diagonal_Matrix check_dY_plus_Z_V1_vs_V3(dY_plus_Z_V3);
+		check_dY_plus_Z_V1_vs_V3 -= dY_plus_Z;
+		El::BigFloat check_dY_plus_Z_V1_vs_V3_max = check_dY_plus_Z_V1_vs_V3.max_abs_mpi();
+		if (El::mpi::Rank() == 0)std::cout << "[Corrector] check_dY_plus_Z_V1_vs_V3_max=" << check_dY_plus_Z_V1_vs_V3_max << "\n";
+		//check_dY_plus_Z_V1_vs_V3.symmetrize();
+		//check_dY_plus_Z_V1_vs_V3_max = check_dY_plus_Z_V1_vs_V3.max_abs_mpi();
+		//if (El::mpi::Rank() == 0)std::cout << "[Corrector] check_dY_plus_Z_V1_vs_V3_max.sym=" << check_dY_plus_Z_V1_vs_V3 << "\n";
+		
+		Block_Vector trAp_dY_plus_Z_V3(x);
+		compute_trAp_Z(block_info, sdp, dY_plus_Z_V3, trAp_dY_plus_Z_V3);
+		Block_Vector check_trAp_dY_plus_Z_V1_vs_V3(trAp_dY_plus_Z_V3);
+		Block_Vector_minus_equal(check_trAp_dY_plus_Z_V1_vs_V3, trAp_dY_plus_Z);
+		El::BigFloat check_trAp_dY_plus_Z_V1_vs_V3_max = Block_Vector_p_max_V3(block_info, check_trAp_dY_plus_Z_V1_vs_V3);
+		if (El::mpi::Rank() == 0)std::cout << "[Corrector] check_trAp_dY_plus_Z_V1_vs_V3_max=" << check_trAp_dY_plus_Z_V1_vs_V3_max << "\n";
+
+		Block_Vector trAp_dY_plus_Z_V3_plus_Sdx(trAp_dY_plus_Z_V3);
+		Block_Vector_plus_equal(trAp_dY_plus_Z_V3_plus_Sdx, Sdx);
+		El::BigFloat trAp_dY_plus_Z_V3_plus_Sdx_max = Block_Vector_p_max_V3(block_info, trAp_dY_plus_Z_V3_plus_Sdx);
+		if (El::mpi::Rank() == 0)std::cout << "[Corrector] trAp_dY_plus_Z_V3_plus_Sdx_max=" << trAp_dY_plus_Z_V3_plus_Sdx_max << "\n";
 
 		Block_Vector trApY(x);
 		compute_trAp_Z(block_info, sdp, Y, trApY);
@@ -341,6 +374,7 @@ void SDP_Solver::step(
 		Block_Vector trApY_V2(x);
 
 		compute_trA_Y_V2(block_info, sdp, A_Y, trApY_V2);
+
 
 		/*
 		if (El::mpi::Rank() == 0)std::cout << "----------- B info ---------------" << "\n" << std::flush;
@@ -402,6 +436,22 @@ void SDP_Solver::step(
 		//trApY_V2_minus_V1_max = Block_Vector_sum_max(trApY_V2_minus_V1);
 		//if (El::mpi::Rank() == 0)std::cout << "[Corrector] :#tr(Ap Y)_V2 - tr(Ap Y)_V1=" << trApY_V2_minus_V1_max << "\n";
 		
+
+		if (El::mpi::Rank() == 0)std::cout << "----------- check S identity ---------------" << "\n" << std::flush;
+
+		Block_Vector test_S_identity_dx(x);
+		compute_tr_A_InvX_Adx_Y_vs_Sdx(block_info, sdp, dx, X_cholesky, Y, schur_complement, test_S_identity_dx);
+		El::BigFloat test_S_identity_dx_max = Block_Vector_p_max_V3(block_info, test_S_identity_dx);
+		if (El::mpi::Rank() == 0)std::cout << "[S identity][Corrector dx]=" << test_S_identity_dx_max << "\n";
+
+		Block_Vector test_S_identity_x(x);
+		compute_tr_A_InvX_Adx_Y_vs_Sdx(block_info, sdp, x, X_cholesky, Y, schur_complement, test_S_identity_x);
+		El::BigFloat test_S_identity_x_max = Block_Vector_p_max_V3(block_info, test_S_identity_x);
+		if (El::mpi::Rank() == 0)std::cout << "[S identity][x]=" << test_S_identity_x_max << "\n";
+
+		if (El::mpi::Rank() == 0)std::cout << "---------------------------------------------" << "\n" << std::flush;
+
+
 
 		/*
 		/////////////// print x,y,X,Y information ///////////////////
