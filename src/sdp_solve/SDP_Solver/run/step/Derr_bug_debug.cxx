@@ -83,29 +83,29 @@ void compute_trAp_Z(const Block_Info &block_info, const SDP &sdp,
 	{
 		// dx = 0
 		*dx_block *= 0;
-		const size_t dx_block_size(block_info.num_points[block_index]);
+		const size_t dx_block_size(block_info.num_points[block_index]);   //  dx_block_size=dim(k)=d_j + 1
 
 		// dx[p] = Tr(A_p Z)
 		// Not sure whether it is better to first loop over blocks in
 		// the result or over sub-blocks in Z
 		for (size_t parity = 0; parity < 2; ++parity)
 		{
-			const size_t Z_block_size(bilinear_bases_block->Height());
+			const size_t Z_block_size(bilinear_bases_block->Height());  // delta_{j,1} +1  or  delta_{j,2} +1
 			El::DistMatrix<El::BigFloat> ones(Z_block->Grid());
 			El::Ones(ones, Z_block_size, 1);
 
-			for (size_t column_block = 0;
-				column_block < block_info.dimensions[block_index];
-				++column_block)
+			for (size_t column_block = 0;   
+				column_block < block_info.dimensions[block_index];   // go through 0, ... , m_j-1
+				++column_block)  
 				for (size_t row_block = 0; row_block <= column_block; ++row_block)
 				{
 					size_t column_offset(column_block * Z_block_size),
 						row_offset(row_block * Z_block_size);
 
 					El::DistMatrix<El::BigFloat> Z_sub_block(
-						El::LockedView(*Z_block, row_offset, column_offset,
+						El::LockedView(*Z_block, row_offset, column_offset,    //  Z_b_rs subblock
 							Z_block_size, Z_block_size)),
-						Z_times_q(Z_block_size, dx_block_size, Z_block->Grid());
+						Z_times_q(Z_block_size, dx_block_size, Z_block->Grid());   
 					El::Zero(Z_times_q);
 					El::DistMatrix<El::BigFloat> q_Z_q(Z_times_q);
 					El::Zero(q_Z_q);
@@ -114,7 +114,7 @@ void compute_trAp_Z(const Block_Info &block_info, const SDP &sdp,
 						El::BigFloat(1), Z_sub_block, *bilinear_bases_block,
 						El::BigFloat(0), Z_times_q);
 
-					El::Hadamard(Z_times_q, *bilinear_bases_block, q_Z_q);
+					El::Hadamard(Z_times_q, *bilinear_bases_block, q_Z_q); 
 
 					const size_t dx_row_offset(
 						((column_block * (column_block + 1)) / 2 + row_block)
@@ -123,7 +123,7 @@ void compute_trAp_Z(const Block_Info &block_info, const SDP &sdp,
 						El::View(*dx_block, dx_row_offset, 0, dx_block_size, 1));
 
 					El::Gemv(El::Orientation::TRANSPOSE, El::BigFloat(1), q_Z_q,
-						ones, El::BigFloat(0), dx_sub_block);
+						ones, El::BigFloat(1), dx_sub_block);
 				}
 			++Z_block;
 			++bilinear_bases_block;
@@ -202,6 +202,8 @@ El::BigFloat Block_Vector_sum_max(const Block_Vector &dy)
 {
 	//Block_Vector dy(dy_org);
 
+	//if (El::mpi::Rank() == 0)std::cout << "test 1" << "\n";
+
 	int64_t height = dy.blocks.front().LocalHeight();
 
 	El::DistMatrix<El::BigFloat> dy_dist;
@@ -209,6 +211,8 @@ El::BigFloat Block_Vector_sum_max(const Block_Vector &dy)
 	{
 		El::Matrix<El::BigFloat> dy_sum;
 		Zeros(dy_sum, height, 1);
+
+		//if (El::mpi::Rank() == 0)std::cout << "test 2" << "\n";
 
 		for (size_t block = 0; block < dy.blocks.size(); ++block)
 		{
@@ -226,6 +230,8 @@ El::BigFloat Block_Vector_sum_max(const Block_Vector &dy)
 			}
 		}
 
+		//if (El::mpi::Rank() == 0)std::cout << "test 3" << "\n";
+
 		// Send out updates for dy
 		El::BigFloat zero(0);
 		for (int64_t row = 0; row < dy_sum.Height(); ++row)
@@ -239,6 +245,7 @@ El::BigFloat Block_Vector_sum_max(const Block_Vector &dy)
 	}
 	dy_dist.ProcessQueues();
 
+	//if (El::mpi::Rank() == 0)std::cout << "test 4" << "\n";
 
 	// Get the max error.
 	El::BigFloat local_primal_error(0);
@@ -248,10 +255,15 @@ El::BigFloat Block_Vector_sum_max(const Block_Vector &dy)
 			local_primal_error = std::max(local_primal_error, El::Abs(dy_dist.GetLocal(row, column)));
 		}
 
+	//if (El::mpi::Rank() == 0)std::cout << "test 5" << "\n";
+
 	El::BigFloat maxvalue = El::mpi::AllReduce(local_primal_error, El::mpi::MAX, El::mpi::COMM_WORLD);
+
+	//if (El::mpi::Rank() == 0)std::cout << "test 6" << "\n";
 
 	return maxvalue; // it seems the value is the same for all ranks.
 }
+
 
 
 
@@ -313,8 +325,8 @@ El::BigFloat Block_Vector_p_max_V3(const Block_Info &block_info, Block_Vector &v
 	Block_Vector_Visit(block_info, vec,
 		[&local_max](size_t globalID, El::DistMatrix<El::BigFloat> & mat) {
 
-		int height = mat.Height();
-		int width = mat.Width();
+		int height = mat.LocalHeight();
+		int width = mat.LocalWidth();
 
 		if (width == 1)
 		{
@@ -345,8 +357,8 @@ El::BigFloat Block_Vector_Square(const Block_Info &block_info, const Block_Vecto
 	Block_Vector_Visit(block_info, vec,
 		[&square](size_t globalID, const El::DistMatrix<El::BigFloat> & mat) {
 
-		int height = mat.Height();
-		int width = mat.Width();
+		int height = mat.LocalHeight();
+		int width = mat.LocalWidth();
 
 		if (width == 1)
 		{
@@ -368,6 +380,7 @@ El::BigFloat Block_Vector_Square(const Block_Info &block_info, const Block_Vecto
 	El::BigFloat global_square = El::mpi::AllReduce(square, El::mpi::SUM, El::mpi::COMM_WORLD);
 	return global_square;
 }
+
 
 
 //////////////// compute tr(A Y) //////////////////////////
@@ -415,6 +428,28 @@ void compute_trA_Y_V2(
 	}
 	//dual_error = El::mpi::AllReduce(local_max, El::mpi::MAX, El::mpi::COMM_WORLD);
 }
+
+
+//////////////// compute tr(A Z) V2 //////////////////////////
+// use A_Z pair
+void compute_A_Y(
+	const Block_Info &block_info, const Block_Diagonal_Matrix &Y,
+	const std::vector<El::DistMatrix<El::BigFloat>> &bases_blocks,
+	std::array<std::vector<std::vector<std::vector<El::DistMatrix<El::BigFloat>>>>,
+	2> &A_Y);
+
+void compute_trAp_Z_V2(const Block_Info &block_info, const SDP &sdp,
+	const Block_Diagonal_Matrix &Z,
+	Block_Vector &result)
+{
+	std::array<std::vector<std::vector<std::vector<El::DistMatrix<El::BigFloat>>>>, 2> A_Z;
+
+	compute_A_Y(block_info, Z, sdp.bases_blocks, A_Z);
+
+	compute_trA_Y_V2(block_info, sdp, A_Z, result);
+	return;
+}
+
 
 
 //////////////// compute B.y //////////////////////////////
@@ -532,3 +567,185 @@ void compute_Sx(
 	}
 }
 
+////////////////// print blocks information /////////////////////
+
+void debug_print_Vector_blocks_info(const Block_Info &block_info, const std::vector<El::DistMatrix<El::BigFloat>> & blocks, const std::string var)
+{
+	bool fakeblockQ = !blocks.empty() && blocks.at(0).Grid().Rank() != 0;
+
+	std::cout << std::flush;
+
+	for (size_t localID = 0; localID != block_info.block_indices.size(); ++localID)
+	{
+		size_t globalID(block_info.block_indices.at(localID));
+
+		const El::DistMatrix<El::BigFloat> & mat = blocks[localID];
+
+		std::cout << var << "[Rank" << El::mpi::Rank() << "] " <<
+			"localID=" << localID << ", local : (" << mat.LocalHeight() << "," << mat.LocalWidth() << ")"
+			<< ", global : (" << mat.Height() << "," << mat.Width() << ")"
+			<< ", fakeQ=" << fakeblockQ << ", grid.rank=" << mat.Grid().Rank()
+			<< ", globalID="<< globalID << "\n" << std::flush;
+	}
+}
+
+void debug_print_Matrix_blocks_info(const Block_Info &block_info, const std::vector<El::DistMatrix<El::BigFloat>> & blocks, const std::string var)
+{
+	bool fakeblockQ = !blocks.empty() && blocks.at(0).Grid().Rank() != 0;
+
+	std::cout << std::flush;
+
+	for (size_t block = 0; block != block_info.block_indices.size(); ++block)
+	{
+		size_t block_index(block_info.block_indices.at(block));
+		for (size_t psd_block(0); psd_block < 2; ++psd_block)
+		{
+			int globalID = 2 * block_index + psd_block;
+			int localID = 2 * block + psd_block;
+
+			const El::DistMatrix<El::BigFloat> & mat = blocks[localID];
+
+			std::cout << var << "[Rank" << El::mpi::Rank() << "] " <<
+				"localID=" << localID << ", local : (" << mat.LocalHeight() << "," << mat.LocalWidth() << ")"
+				<< ", global : (" << mat.Height() << "," << mat.Width() << ")"
+				<< ", fakeQ=" << fakeblockQ << ", grid.rank=" << mat.Grid().Rank()
+				<< ", globalID=" << globalID << "\n" << std::flush;
+		}
+	}
+}
+
+void debug_print_blocks_info(const Block_Info &block_info, const std::vector<El::DistMatrix<El::BigFloat>> & blocks, const std::string var)
+{
+	if (blocks.size() == block_info.block_indices.size())
+		return debug_print_Vector_blocks_info(block_info, blocks, var);
+	else if (blocks.size() == 2 * block_info.block_indices.size())
+		return debug_print_Matrix_blocks_info(block_info, blocks, var);
+	else
+	{
+		std::cout << var << "has size " << blocks.size() << ", while block_info has size " << block_info.block_indices.size() <<  "\n"
+			<< "no available debug_print_blocks_info function for this structure." << std::flush;
+	}
+}
+
+
+void debug_Ap_V1_vs_V2(const Block_Info &block_info, const std::vector<El::DistMatrix<El::BigFloat>> & blocks, const std::string var)
+{
+	bool fakeblockQ = !blocks.empty() && blocks.at(0).Grid().Rank() != 0;
+
+	std::cout << std::flush;
+
+	for (size_t localID = 0; localID != block_info.block_indices.size(); ++localID)
+	{
+		size_t globalID(block_info.block_indices.at(localID));
+
+		const El::DistMatrix<El::BigFloat> & mat = blocks[localID];
+
+		if (globalID == 1)
+		{
+			std::cout << var << " globalID=" << globalID << "\n" << std::flush;
+			El::Print(mat);
+		}
+	}
+}
+
+
+// this function is based on solve_schur_complement_equation
+El::BigFloat Block_Vector_sum_dot_debug(const Block_Vector &dy)
+{
+	//Block_Vector dy(dy_org);
+
+	int64_t height = dy.blocks.front().LocalHeight();
+
+	El::DistMatrix<El::BigFloat> dy_dist;
+	Zeros(dy_dist, height, 1);
+	{
+		El::Matrix<El::BigFloat> dy_sum;
+		Zeros(dy_sum, height, 1);
+
+		for (size_t block = 0; block < dy.blocks.size(); ++block)
+		{
+			// Locally sum contributions to dy
+			for (int64_t row = 0; row < dy.blocks[block].LocalHeight(); ++row)
+			{
+				int64_t global_row(dy.blocks[block].GlobalRow(row));
+				for (int64_t column = 0; column < dy.blocks[block].LocalWidth();
+					++column)
+				{
+					int64_t global_column(dy.blocks[block].GlobalCol(column));
+					dy_sum(global_row, global_column)
+						+= dy.blocks[block].GetLocal(row, column);
+				}
+			}
+		}
+
+		// Send out updates for dy
+		El::BigFloat zero(0);
+		for (int64_t row = 0; row < dy_sum.Height(); ++row)
+			for (int64_t column = 0; column < dy_sum.Width(); ++column)
+			{
+				if (dy_sum(row, column) != zero)
+				{
+					std::ostringstream message;
+					message.precision(100);
+
+					message << "QueueUpdate[" << "Rank->" << El::mpi::Rank() << ", "
+						<< " Entry[" << row << "," << column << "]->" << dy_sum(row, column) << "]\n";
+					
+					//std::cout << message.str() << std::flush;
+
+					dy_dist.QueueUpdate(row, column, dy_sum(row, column));
+				}
+			}
+
+		/*
+		for (int rankID = 0; rankID < 3; rankID++)
+		{
+			El::mpi::Barrier(MPI_COMM_WORLD);
+			usleep(10000);
+			if (rankID == El::mpi::Rank())
+			{
+				std::cout << "dy_sum on rank" << El::mpi::Rank() << "\n" << std::flush;
+				El::Print(dy_sum);
+				std::cout << "\n" << std::flush;
+			}
+			usleep(100000);
+			El::mpi::Barrier(MPI_COMM_WORLD);
+		}
+		dy_dist.QueueUpdate(El::mpi::Rank(), 0, El::BigFloat(El::mpi::Rank()));
+		dy_dist.QueueUpdate(El::mpi::Rank(), 0, El::BigFloat(El::mpi::Rank()));
+		*/
+	}
+	dy_dist.ProcessQueues();
+
+	El::BigFloat local_sum_V1(0);
+	for (int64_t row = 0; row < dy_dist.LocalHeight(); ++row)
+		for (int64_t column = 0; column < dy_dist.LocalWidth();
+			++column)
+	{
+		local_sum_V1 += dy_dist.GetLocal(row, column)*dy_dist.GetLocal(row, column);
+	}
+
+	El::BigFloat local_sum_V2 = Dotu(dy_dist, dy_dist);
+
+	El::BigFloat globalsum = El::mpi::AllReduce(local_sum_V1, El::mpi::SUM, El::mpi::COMM_WORLD);
+
+	// somehow maxvalue value are zero for some ranks (possible ranks with duplicate block), but local_sum are non-zero for those ranks
+
+	//const El::DistMatrix<El::BigFloat> & mat = dy_dist;
+	//bool fakeblockQ = mat.Grid().Rank() != 0;
+
+	//El::Print(dy_dist, "dy_dist");
+
+	/*
+	std::cout << "p" << "[Rank" << El::mpi::Rank() << "] "
+		<< ", local : (" << mat.LocalHeight() << "," << mat.LocalWidth() << ")"
+		<< ", global : (" << mat.Height() << "," << mat.Width() << ")"
+		<< ", fakeQ=" << fakeblockQ << ", grid.rank=" << mat.Grid().Rank()
+		<< ", local_sum_V1=" << local_sum_V1
+		<< ", local_sum_V2=" << local_sum_V2
+		<< ", globalsum=" << globalsum 
+		<< "\n" << std::flush;
+		*/
+
+	return globalsum; // it seems the value is the same for all ranks.
+}

@@ -95,10 +95,17 @@ void compute_trA_Y_V2(
 El::BigFloat Block_Vector_p_max_V2(const Block_Info &block_info, const Block_Vector &vec);
 El::BigFloat Block_Vector_p_max_V3(const Block_Info &block_info, Block_Vector &vec);
 
+El::BigFloat Block_Vector_sum_dot_debug(const Block_Vector &dy);
 
 void Assert_DistMatrix_Local(const El::DistMatrix<El::BigFloat> & mat, auto message);
 El::BigFloat Block_Vector_Square(const Block_Info &block_info, const Block_Vector &vec);
 
+void debug_print_Matrix_blocks_info(const Block_Info &block_info, const std::vector<El::DistMatrix<El::BigFloat>> & blocks, const std::string var);
+void debug_print_Vector_blocks_info(const Block_Info &block_info, const std::vector<El::DistMatrix<El::BigFloat>> & blocks, const std::string var);
+void debug_print_blocks_info(const Block_Info &block_info, const std::vector<El::DistMatrix<El::BigFloat>> & blocks, const std::string var);
+void debug_Ap_V1_vs_V2(const Block_Info &block_info, const std::vector<El::DistMatrix<El::BigFloat>> & blocks, const std::string var);
+
+void compute_trAp_Z_V2(const Block_Info &block_info, const SDP &sdp, const Block_Diagonal_Matrix &Z, Block_Vector &result);
 
 void SDP_Solver::step(
   const Solver_Parameters &parameters, const std::size_t &total_psd_rows,
@@ -180,6 +187,19 @@ void SDP_Solver::step(
 	{
  		El::BigFloat primal_residue_p_2 = Block_Vector_sum_max(primal_residue_p);
 		if (El::mpi::Rank() == 0)std::cout << "Block_Vector_sum_max(primal_residue_p) =" << primal_residue_p_2 << "\n";
+
+		//El::mpi::Barrier(block_info.mpi_comm.value);
+		//if (El::mpi::Rank() == 0)std::cout << "----------- p info ---------------" << "\n" << std::flush;
+		El::mpi::Barrier(MPI_COMM_WORLD); usleep(100000);
+		//debug_print_Vector_blocks_info(block_info, primal_residue_p.blocks, "p");
+		
+		//usleep(1000000);
+
+		//if (El::mpi::Rank() == 0)std::cout << "----------- dy_dist info ---------------" << "\n" << std::flush;
+
+		//El::BigFloat primal_residue_p_dot = Block_Vector_sum_dot_debug(primal_residue_p);
+		//if (El::mpi::Rank() == 0)std::cout << "Block_Vector_sum_dot_debug(primal_residue_p) =" << primal_residue_p_dot << "\n";
+		//usleep(1000000);
 	}
 
     // Compute the predictor solution for (dx, dX, dy, dY)
@@ -238,8 +258,8 @@ void SDP_Solver::step(
 
 		El::BigFloat dx2 = dot(dx, dx);
 		El::BigFloat dy2 = dot(dy, dy);
-		El::BigFloat dx2crt = Block_Vector_sum_dot(dx);
-		El::BigFloat dy2crt = Block_Vector_sum_dot(dy);
+		El::BigFloat dx2crt = 0; // Block_Vector_sum_dot(dx);
+		El::BigFloat dy2crt = 0; // Block_Vector_sum_dot(dy);
 
 		if (El::mpi::Rank() == 0)std::cout << "Predictor : |dx.dx|=" << dx2 <<
 			", sum_dot(dx)=" << dx2crt <<
@@ -279,8 +299,8 @@ void SDP_Solver::step(
 
 		El::BigFloat result_max = Block_Vector_p_max_V3(block_info, result_test);
 		if (El::mpi::Rank() == 0)std::cout << "[Corrector] Sdx-Bdy+d+tr(AZ)=" << result_max << "\n";
-		result_max = Block_Vector_sum_max(result_test);
-		if (El::mpi::Rank() == 0)std::cout << "[Corrector]#Sdx-Bdy+d+tr(AZ)=" << result_max << "\n";
+		//result_max = Block_Vector_sum_max(result_test);
+		//if (El::mpi::Rank() == 0)std::cout << "[Corrector]#Sdx-Bdy+d+tr(AZ)=" << result_max << "\n";
 
 		Block_Diagonal_Matrix dY_plus_Z(dY);
 		dY_plus_Z += Z;
@@ -293,8 +313,16 @@ void SDP_Solver::step(
 
 		El::BigFloat result2_max = Block_Vector_p_max_V3(block_info, result_test2);
 		if (El::mpi::Rank() == 0)std::cout << "[Corrector] tr(A(dY+Z)+Sdx)=" << result2_max << "\n";
-		result2_max = Block_Vector_sum_max(result_test2);
-		if (El::mpi::Rank() == 0)std::cout << "[Corrector]#tr(A(dY+Z)+Sdx)=" << result2_max << "\n";
+		//result2_max = Block_Vector_sum_max(result_test2);
+		//if (El::mpi::Rank() == 0)std::cout << "[Corrector]#tr(A(dY+Z)+Sdx)=" << result2_max << "\n";
+
+		Block_Vector trAp_dY_plus_Z_V2(x);
+		compute_trAp_Z_V2(block_info, sdp, dY_plus_Z, trAp_dY_plus_Z_V2);
+		Block_Vector trAp_dY_plus_Z_plus_Sdx(trAp_dY_plus_Z_V2);
+		Block_Vector_plus_equal(trAp_dY_plus_Z_plus_Sdx, Sdx);
+		El::BigFloat trAp_dY_plus_Z_plus_Sdx_V2_max = Block_Vector_p_max_V3(block_info, trAp_dY_plus_Z_plus_Sdx);
+		if (El::mpi::Rank() == 0)std::cout << "[Corrector] tr(A(dY+Z)+Sdx)_V2=" << trAp_dY_plus_Z_plus_Sdx_V2_max << "\n";
+
 
 		Block_Vector trApY(x);
 		compute_trAp_Z(block_info, sdp, Y, trApY);
@@ -306,13 +334,56 @@ void SDP_Solver::step(
 
 		El::BigFloat result_old_d_max = Block_Vector_p_max_V3(block_info, result_old_d);
 		if (El::mpi::Rank() == 0)std::cout << "[Corrector] tr(Ap Y)+By-c=" << result_old_d_max << "\n";
-		result_old_d_max = Block_Vector_sum_max(result_old_d);
-		if (El::mpi::Rank() == 0)std::cout << "[Corrector]#tr(Ap Y)+By-c=" << result_old_d_max << "\n";
+		//result_old_d_max = Block_Vector_sum_max(result_old_d);
+		//if (El::mpi::Rank() == 0)std::cout << "[Corrector]#tr(Ap Y)+By-c=" << result_old_d_max << "\n";
 
 
 		Block_Vector trApY_V2(x);
 
 		compute_trA_Y_V2(block_info, sdp, A_Y, trApY_V2);
+
+		/*
+		if (El::mpi::Rank() == 0)std::cout << "----------- B info ---------------" << "\n" << std::flush;
+		El::mpi::Barrier(MPI_COMM_WORLD); usleep(100000);
+		debug_print_blocks_info(block_info, sdp.bilinear_bases, "[B]");
+		El::mpi::Barrier(MPI_COMM_WORLD); usleep(100000);
+
+		if (El::mpi::Rank() == 0)std::cout << "----------- Z info ---------------" << "\n" << std::flush;
+		El::mpi::Barrier(MPI_COMM_WORLD); usleep(100000);
+		debug_print_blocks_info(block_info, Z.blocks, "[Z]");
+		El::mpi::Barrier(MPI_COMM_WORLD); usleep(100000);
+		*/
+
+		/*
+		for (auto &block_index : block_info.block_indices)
+		{
+			std::cout << "Rank=" << El::mpi::Rank() << ", globalID=" << block_index
+				<< ", num_points=" << block_info.num_points[block_index] 
+				<< ", dimensions=" << block_info.dimensions[block_index] << "\n";
+		}
+		*/
+
+		/*
+		if (El::mpi::Rank() == 0)std::cout << "----------- tr(A Y) V1 info ---------------" << "\n" << std::flush;
+		El::mpi::Barrier(MPI_COMM_WORLD); usleep(100000);
+		debug_print_blocks_info(block_info, trApY.blocks, "[trAY V1]");
+		El::mpi::Barrier(MPI_COMM_WORLD); usleep(100000);
+
+		if (El::mpi::Rank() == 0)std::cout << "----------- tr(A Y) V2 info ---------------" << "\n" << std::flush;
+		El::mpi::Barrier(MPI_COMM_WORLD); usleep(100000);
+		debug_print_blocks_info(block_info, trApY_V2.blocks, "[trAY V2]");
+		El::mpi::Barrier(MPI_COMM_WORLD); usleep(100000);
+
+		if (El::mpi::Rank() == 0)std::cout << std::flush << "----------- tr(A Y) V1 data ---------------" << "\n" << std::flush;
+		El::mpi::Barrier(MPI_COMM_WORLD); usleep(100000);
+		debug_Ap_V1_vs_V2(block_info, trApY.blocks, "[trAY V1]");
+		El::mpi::Barrier(MPI_COMM_WORLD); usleep(1000000);
+
+		if (El::mpi::Rank() == 0)std::cout << std::flush << "----------- tr(A Y) V2 data ---------------" << "\n" << std::flush;
+		El::mpi::Barrier(MPI_COMM_WORLD); usleep(100000);
+		debug_Ap_V1_vs_V2(block_info, trApY_V2.blocks, "[trAY V2]");
+		El::mpi::Barrier(MPI_COMM_WORLD); usleep(1000000);
+		*/
 
 		Block_Vector result_old_d_V2(trApY_V2);
 		Block_Vector_plus_equal(result_old_d_V2, By);
@@ -320,21 +391,39 @@ void SDP_Solver::step(
 
 		El::BigFloat result_old_d_V2_max = Block_Vector_p_max_V3(block_info, result_old_d_V2);
 		if (El::mpi::Rank() == 0)std::cout << "[Corrector] V2 : tr(Ap Y)+By-c=" << result_old_d_V2_max << "\n";
-		result_old_d_V2_max = Block_Vector_sum_max(result_old_d_V2);
-		if (El::mpi::Rank() == 0)std::cout << "[Corrector] V2 :#tr(Ap Y)+By-c=" << result_old_d_V2_max << "\n";
+		//result_old_d_V2_max = Block_Vector_sum_max(result_old_d_V2);
+		//if (El::mpi::Rank() == 0)std::cout << "[Corrector] V2 :#tr(Ap Y)+By-c=" << result_old_d_V2_max << "\n";
 
 		Block_Vector trApY_V2_minus_V1(trApY_V2); 
 		Block_Vector_minus_equal(trApY_V2_minus_V1, trApY);
 
 		El::BigFloat trApY_V2_minus_V1_max = Block_Vector_p_max_V3(block_info, trApY_V2_minus_V1);
 		if (El::mpi::Rank() == 0)std::cout << "[Corrector] : tr(Ap Y)_V2 - tr(Ap Y)_V1=" << trApY_V2_minus_V1_max << "\n";
-		trApY_V2_minus_V1_max = Block_Vector_sum_max(trApY_V2_minus_V1);
-		if (El::mpi::Rank() == 0)std::cout << "[Corrector] :#tr(Ap Y)_V2 - tr(Ap Y)_V1=" << trApY_V2_minus_V1_max << "\n";
-		
+		//trApY_V2_minus_V1_max = Block_Vector_sum_max(trApY_V2_minus_V1);
+		//if (El::mpi::Rank() == 0)std::cout << "[Corrector] :#tr(Ap Y)_V2 - tr(Ap Y)_V1=" << trApY_V2_minus_V1_max << "\n";
 		
 
-		if (El::mpi::Rank() == 0)std::cout << "----------- debug tr(Ap Y) V2 ---------------" << "\n";
+		/*
+		/////////////// print x,y,X,Y information ///////////////////
+		//El::mpi::Barrier(block_info.mpi_comm.value);
+		if (El::mpi::Rank() == 0)std::cout << "----------- x info ---------------" << "\n" << std::flush;
+		El::mpi::Barrier(MPI_COMM_WORLD); usleep(100000);
+		debug_print_Vector_blocks_info(block_info, x.blocks, "x");
+		if (El::mpi::Rank() == 0)std::cout << "----------- y info ---------------" << "\n" << std::flush;
+		El::mpi::Barrier(MPI_COMM_WORLD); usleep(100000);
+		debug_print_Vector_blocks_info(block_info, y.blocks, "y");
+		if (El::mpi::Rank() == 0)std::cout << "----------- X info ---------------" << "\n" << std::flush;
+		El::mpi::Barrier(MPI_COMM_WORLD); usleep(100000);
+		debug_print_Matrix_blocks_info(block_info, X.blocks, "X");
+		if (El::mpi::Rank() == 0)std::cout << "----------- Y info ---------------" << "\n" << std::flush;
+		El::mpi::Barrier(MPI_COMM_WORLD); usleep(100000);
+		debug_print_Matrix_blocks_info(block_info, Y.blocks, "Y");
+		El::mpi::Barrier(MPI_COMM_WORLD); usleep(100000);
+		/////////////////////////////////////////////////////////////
+		*/
 
+
+		//if (El::mpi::Rank() == 0)std::cout << "----------- debug tr(Ap Y) V2 ---------------" << "\n";
 		//if (El::mpi::Rank() == 0 || El::mpi::Rank() == 1)
 		/*{
 			std::cout << "[Rank" << El::mpi::Rank() << "] blocks.size=" << trApY_V2.blocks.size() << "\n";
