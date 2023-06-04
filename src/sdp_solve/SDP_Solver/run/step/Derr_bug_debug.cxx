@@ -30,6 +30,13 @@ void solve_schur_complement_equation(
 
 El::BigFloat dot(const Block_Vector &A, const Block_Vector &B);
 
+El::BigFloat min_eigenvalue(Block_Diagonal_Matrix &A);
+
+El::BigFloat min_eigenvalue_safe(const Block_Diagonal_Matrix &A)
+{
+	Block_Diagonal_Matrix A_copy(A);
+	return min_eigenvalue(A_copy);
+}
 
 // this function is based on compute_search_direction
 void compute_minus_d_minus_TrApZ(
@@ -65,7 +72,7 @@ void compute_minus_d_minus_TrApZ(
 
 //////////////// compute tr(A Z) //////////////////////////
 // this function is based on compute_schur_RHS
-
+// this function compute x_p=tr(A_p M) for a generic matrix M
 void compute_trAp_Z(const Block_Info &block_info, const SDP &sdp,
 	const Block_Diagonal_Matrix &Z,
 	Block_Vector &result)
@@ -130,6 +137,71 @@ void compute_trAp_Z(const Block_Info &block_info, const SDP &sdp,
 		}
 		++dx_block;
 	}
+}
+/////////////////////////////////////////////////////////////////////////////
+
+size_t Block_Vector_p_index_translate(const Block_Info &block_info, size_t j, size_t r, size_t s, size_t k)
+{
+	const size_t num_points(block_info.num_points[j]);
+
+	if (r > s || k >= num_points)
+	{
+		std::cout << "Rank" << El::mpi::Rank() << " : invalide (j,r,s,k) index : (" 
+			<< j << "," << r << "," << s << "," << k << ")" << ", num_points=" << num_points << "\n";
+		exit(0);
+	}
+
+	return (s*(s + 1) / 2 + r)*num_points + k;
+}
+
+void Block_Vector_p_Set(const Block_Info &block_info, Block_Vector &x,
+	size_t j, size_t r, size_t s, size_t k, const El::BigFloat &value)
+{
+	for (size_t localID = 0; localID != block_info.block_indices.size(); ++localID)
+	{
+		size_t globalID(block_info.block_indices.at(localID));
+
+		auto &x_block = x.blocks.at(localID);
+
+		bool fakeblockQ = x_block.Grid().Rank() != 0;
+
+		size_t local_offset = 0;
+
+		if (globalID == j)
+		{
+			local_offset = Block_Vector_p_index_translate(block_info, j, r, s, k);
+			x_block.Set(local_offset, 0, value);
+		}
+
+		/*
+		std::cout << "Rank=" << El::mpi::Rank()
+			<< ", globalID=" << globalID
+			<< ", global_index=" << "(" << x_block.GlobalRow(local_offset) << "," << x_block.GlobalCol(0) << ")"
+			<< ", fakeblockQ=" << fakeblockQ
+			<< ", grid.rank=" << x_block.Grid().Rank()
+			<< ", local dim=" << "(" << x_block.LocalHeight() << "," << x_block.LocalWidth() << ")"
+			<< ", global dim=" << "(" << x_block.Height() << "," << x_block.Width() << ")"
+			<< ", num_points=" << block_info.num_points[globalID]
+			<< "\n" << std::flush;
+			*/
+
+	}
+}
+
+void Block_Vector_p_Zero(const Block_Info &block_info, Block_Vector &x)
+{
+	for (size_t localID = 0; localID != block_info.block_indices.size(); ++localID)
+	{
+		auto &x_block = x.blocks.at(localID);
+		El::Zero(x_block);
+	}
+}
+
+void Block_Vector_p_Unit(const Block_Info &block_info, Block_Vector &x,
+	size_t j, size_t r, size_t s, size_t k)
+{
+	Block_Vector_p_Zero(block_info, x);
+	Block_Vector_p_Set(block_info, x, j, r, s, k, El::BigFloat(1));
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -385,7 +457,7 @@ El::BigFloat Block_Vector_Square(const Block_Info &block_info, const Block_Vecto
 
 //////////////// compute tr(A Y) //////////////////////////
 // this function is based on compute_dual_residues_and_error
-void compute_trA_Y_V2(
+void compute_tr_AM_pair(
 	const Block_Info &block_info, const SDP &sdp,
 	const std::array<
 	std::vector<std::vector<std::vector<El::DistMatrix<El::BigFloat>>>>, 2>
@@ -438,6 +510,7 @@ void compute_A_Y(
 	std::array<std::vector<std::vector<std::vector<El::DistMatrix<El::BigFloat>>>>,
 	2> &A_Y);
 
+
 void compute_trAp_Z_V2(const Block_Info &block_info, const SDP &sdp,
 	const Block_Diagonal_Matrix &Z,
 	Block_Vector &result)
@@ -446,7 +519,7 @@ void compute_trAp_Z_V2(const Block_Info &block_info, const SDP &sdp,
 
 	compute_A_Y(block_info, Z, sdp.bases_blocks, A_Z);
 
-	compute_trA_Y_V2(block_info, sdp, A_Z, result);
+	compute_tr_AM_pair(block_info, sdp, A_Z, result);
 	return;
 }
 
@@ -766,6 +839,7 @@ void compute_minus_InvX_Apdx_Y(const Block_Info &block_info, const SDP &sdp, con
 }
 
 
+
 ////////////////////// check tr(A_i X^-1 (A.dx) Y)  vs  S.dx //////////////////
 
 void compute_tr_A_InvX_Adx_Y(const Block_Info &block_info, const SDP &sdp, const Block_Vector &dx,
@@ -792,4 +866,220 @@ void compute_tr_A_InvX_Adx_Y_vs_Sdx(const Block_Info &block_info, const SDP &sdp
 	compute_Sx(block_info, schur_complement, dx, Sdx);
 
 	Block_Vector_minus_equal(result, Sdx);
+}
+
+
+void print_Matrix_block(const Block_Info &block_info, const Block_Diagonal_Matrix &mat, size_t globalID_to_print, const std::string file_suffix);
+
+
+
+// X := ACholesky^{-T} ACholesky^{-1} X = A^{-1} X
+void cholesky_solve_fix(const Block_Diagonal_Matrix &ACholesky,
+	Block_Diagonal_Matrix &X)
+{
+	for (size_t b = 0; b < X.blocks.size(); b++)
+	{
+		El::Trsm(El::LeftOrRight::LEFT, El::UpperOrLowerNS::LOWER,
+			El::Orientation::NORMAL, El::UnitOrNonUnit::NON_UNIT,
+			El::BigFloat(1), ACholesky.blocks[b], X.blocks[b]);
+	}
+	for (size_t b = 0; b < X.blocks.size(); b++)
+	{
+		El::Trsm(El::LeftOrRight::LEFT, El::UpperOrLowerNS::LOWER,
+			El::Orientation::ADJOINT, El::UnitOrNonUnit::NON_UNIT,
+			El::BigFloat(1), ACholesky.blocks[b], X.blocks[b]);
+	}
+}
+
+
+
+void check_A_InvX(const Block_Info &block_info, const SDP &sdp, 
+	const std::array<
+	std::vector<std::vector<std::vector<El::DistMatrix<El::BigFloat>>>>, 2>
+	&A_X_inv, const Block_Diagonal_Matrix &X_cholesky, const Block_Diagonal_Matrix &X, const Block_Vector &x)
+{
+	Block_Vector tr_A_InvX(x);
+	compute_tr_AM_pair(block_info, sdp, A_X_inv, tr_A_InvX);
+
+	Block_Diagonal_Matrix InvX(X);
+	InvX *= 0;
+	InvX.add_diagonal(1);
+	Block_Diagonal_Matrix InvX_org(InvX);
+
+	cholesky_solve(X_cholesky, InvX);
+
+	Block_Vector tr_A_InvX_V2(x);
+	compute_trAp_Z_V2(block_info, sdp, InvX, tr_A_InvX_V2);
+
+	Block_Vector check_tr_A_InvX_V1_vs_V2(tr_A_InvX);
+	Block_Vector_minus_equal(check_tr_A_InvX_V1_vs_V2, tr_A_InvX_V2);
+	El::BigFloat check_tr_A_InvX_V1_vs_V2_max = Block_Vector_p_max_V3(block_info, check_tr_A_InvX_V1_vs_V2);
+	if (El::mpi::Rank() == 0)std::cout << "[check A_InvX] : V1-V2=" << check_tr_A_InvX_V1_vs_V2_max << "\n";
+
+	El::BigFloat XInvmin = min_eigenvalue_safe(InvX);
+	if (El::mpi::Rank() == 0)std::cout << "[check A_InvX] : min(InvX)=" << XInvmin << "\n";
+
+	Block_Diagonal_Matrix check_InvX_sym(InvX);
+	check_InvX_sym.symmetrize();
+	check_InvX_sym -= InvX;
+	El::BigFloat check_InvX_sym_max = check_InvX_sym.max_abs_mpi();
+	if (El::mpi::Rank() == 0)std::cout << "[check A_InvX] : check_InvX_sym_max=" << check_InvX_sym_max << "\n";
+
+	/**/
+	print_Matrix_block(block_info, InvX, 3, "pd35_InvX");
+	print_Matrix_block(block_info, X, 3, "pd35_X");
+	print_Matrix_block(block_info, X_cholesky, 3, "pd35_choleskyX");
+	
+
+}
+
+
+
+void check_S_identity(const Block_Info &block_info, const SDP &sdp,
+	const Block_Diagonal_Matrix &schur_complement, const Block_Diagonal_Matrix &X_cholesky,
+	const Block_Diagonal_Matrix &X, const Block_Diagonal_Matrix &Y, 
+	const Block_Vector &x, const Block_Vector &dx)
+{
+	Block_Vector vec1(x), vec2(x);
+	Block_Vector_p_Unit(block_info, vec1, 3, 0, 0, 3);
+	Block_Vector_p_Unit(block_info, vec2, 3, 0, 0, 4);
+
+	El::BigFloat v1_v1, v1_v2, v2_v2;
+	v1_v1 = dot(vec1, vec1);
+	v1_v2 = dot(vec1, vec2);
+	v2_v2 = dot(vec2, vec2);
+
+	Block_Vector S_v1(x), S_v2(x);
+	compute_tr_A_InvX_Adx_Y_vs_Sdx(block_info, sdp, vec1, X_cholesky, Y, schur_complement, S_v1);
+	compute_tr_A_InvX_Adx_Y_vs_Sdx(block_info, sdp, vec2, X_cholesky, Y, schur_complement, S_v2);
+
+	El::BigFloat S_11 = dot(vec1, S_v1);
+	El::BigFloat S_12 = dot(vec1, S_v2);
+	El::BigFloat S_21 = dot(vec2, S_v1);
+	El::BigFloat S_22 = dot(vec2, S_v2);
+
+	if (El::mpi::Rank() == 0)std::cout << "[S identity] : S11 V1-V2 =" << S_11 << "\n";
+	if (El::mpi::Rank() == 0)std::cout << "[S identity] : S12 V1-V2 =" << S_12 << "\n";
+	if (El::mpi::Rank() == 0)std::cout << "[S identity] : S21 V1-V2 =" << S_21 << "\n";
+	if (El::mpi::Rank() == 0)std::cout << "[S identity] : S22 V1-V2 =" << S_22 << "\n";
+
+	El::BigFloat SvsA_p1_max = Block_Vector_p_max_V3(block_info, S_v1);
+	El::BigFloat SvsA_p2_max = Block_Vector_p_max_V3(block_info, S_v2);
+
+	if (El::mpi::Rank() == 0)std::cout << "[S identity] : S V1-V2 at p1.max=" << SvsA_p1_max
+		<< ", p2.max=" << SvsA_p2_max  << "\n";
+
+}
+
+void check_S_identity_V2(const Block_Info &block_info, const SDP &sdp,
+	const Block_Diagonal_Matrix &schur_complement, const Block_Diagonal_Matrix &X_cholesky,
+	const Block_Diagonal_Matrix &X, const Block_Diagonal_Matrix &Y,
+	const Block_Vector &x, const Block_Vector &dx)
+{
+	Block_Vector vec1(x), vec2(x);
+	Block_Vector_p_Unit(block_info, vec1, 3, 0, 0, 3);
+	Block_Vector_p_Unit(block_info, vec2, 3, 0, 0, 4);
+
+	El::BigFloat v1_v1, v1_v2, v2_v2;
+	v1_v1 = dot(vec1, vec1);
+	v1_v2 = dot(vec1, vec2);
+	v2_v2 = dot(vec2, vec2);
+
+	Block_Vector AInvXAY_v1(x), AInvXAY_v2(x), S_v1(x), S_v2(x);
+	compute_tr_A_InvX_Adx_Y(block_info, sdp, vec1, X_cholesky, Y, AInvXAY_v1);
+	compute_tr_A_InvX_Adx_Y(block_info, sdp, vec2, X_cholesky, Y, AInvXAY_v2);
+	compute_Sx(block_info, schur_complement, vec1, S_v1);
+	compute_Sx(block_info, schur_complement, vec2, S_v2);
+
+	El::BigFloat S_11 = dot(vec1, S_v1);
+	El::BigFloat S_12 = dot(vec1, S_v2);
+	El::BigFloat S_21 = dot(vec2, S_v1);
+	El::BigFloat S_22 = dot(vec2, S_v2);
+
+	El::BigFloat AInvXAY_11 = dot(vec1, AInvXAY_v1);
+	El::BigFloat AInvXAY_12 = dot(vec1, AInvXAY_v2);
+	El::BigFloat AInvXAY_21 = dot(vec2, AInvXAY_v1);
+	El::BigFloat AInvXAY_22 = dot(vec2, AInvXAY_v2);
+
+	if (El::mpi::Rank() == 0)std::cout << 
+		"[S identity] : S11=" << S_11 << ", S12=" << S_12 << ", S21=" << S_21 << ", S22=" << S_22
+		<< ", S12-S21=" << (S_12 - S_21) << "\n";
+
+	if (El::mpi::Rank() == 0)std::cout <<
+		"[S identity] : A11=" << AInvXAY_11 << ", A12=" << AInvXAY_12 << ", A21=" << AInvXAY_21 << ", A22=" << AInvXAY_22 
+		<< ", A12-A21=" << (AInvXAY_12 - AInvXAY_21) << "\n";
+
+	if (El::mpi::Rank() == 0)std::cout <<
+		"[S identity] : A12-S12=" << (S_12 - AInvXAY_12) << ", A21-S21=" << (AInvXAY_21 - S_21) << "\n";
+}
+
+
+
+
+
+/*
+
+Block_Diagonal_Matrix InvXCholesky(X);
+InvXCholesky *= 0;
+InvXCholesky.add_diagonal(1);
+for (size_t b = 0; b < X.blocks.size(); b++)
+{
+El::Trsm(El::LeftOrRight::LEFT, El::UpperOrLowerNS::LOWER,
+El::Orientation::NORMAL, El::UnitOrNonUnit::NON_UNIT,
+El::BigFloat(1), X_cholesky.blocks[b], InvXCholesky.blocks[b]);
+}
+print_Matrix_block(block_info, InvXCholesky, 3, "pd11_InvCholeskyX");
+
+Block_Diagonal_Matrix InvTXCholesky_InvXCholesky(InvXCholesky);
+for (size_t b = 0; b < X.blocks.size(); b++)
+{
+El::Trsm(El::LeftOrRight::LEFT, El::UpperOrLowerNS::LOWER,
+El::Orientation::ADJOINT, El::UnitOrNonUnit::NON_UNIT,
+El::BigFloat(1), X_cholesky.blocks[b], InvTXCholesky_InvXCholesky.blocks[b]);
+}
+print_Matrix_block(block_info, InvTXCholesky_InvXCholesky, 3, "pd11_InvTXCholesky_InvCholeskyX");
+*/
+
+
+void write_psd_block(const boost::filesystem::path &outfile,
+	const El::DistMatrix<El::BigFloat> &block)
+{
+	boost::filesystem::ofstream stream;
+	if (block.DistRank() == block.Root())
+	{
+		stream.open(outfile);
+	}
+	El::Print(block,
+		std::to_string(block.Height()) + " "
+		+ std::to_string(block.Width()),
+		"\n", stream);
+	if (block.DistRank() == block.Root())
+	{
+		stream << "\n";
+		if (!stream.good())
+		{
+			throw std::runtime_error("Error when writing to: "
+				+ outfile.string());
+		}
+	}
+}
+
+void print_Matrix_block(const Block_Info &block_info, const Block_Diagonal_Matrix &mat, size_t globalID_to_print, const std::string file_suffix)
+{
+	for (size_t block = 0; block != block_info.block_indices.size(); ++block)
+	{
+		size_t block_index(block_info.block_indices.at(block));
+		for (size_t psd_block(0); psd_block < 2; ++psd_block)
+		{
+			int globalID = 2 * block_index + psd_block;
+			int localID = 2 * block + psd_block;
+
+			auto &curblock = mat.blocks.at(localID);
+
+			if (globalID == globalID_to_print)
+			{
+				write_psd_block("./testdata/"+ file_suffix + "_" + std::to_string(globalID) + ".txt", curblock);
+			}
+		}
+	}
 }

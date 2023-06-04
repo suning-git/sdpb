@@ -108,6 +108,14 @@ public:
       }
   }
 
+  void MakeTrapezoidal(El::UpperOrLower uplo)
+  {
+	  for (auto &block : blocks)
+	  {
+		  El::MakeTrapezoidal(uplo, block);
+	  }
+  }
+
   // The maximal absolute value of the elements of M
   El::BigFloat max_abs() const
   {

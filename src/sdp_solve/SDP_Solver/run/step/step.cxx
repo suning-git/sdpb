@@ -87,7 +87,7 @@ void compute_trAp_Z(const Block_Info &block_info, const SDP &sdp,
 	const Block_Diagonal_Matrix &Z,
 	Block_Vector &result);
 
-void compute_trA_Y_V2(
+void compute_tr_AM_pair(
 	const Block_Info &block_info, const SDP &sdp,
 	const std::array<
 	std::vector<std::vector<std::vector<El::DistMatrix<El::BigFloat>>>>, 2>
@@ -117,6 +117,22 @@ void compute_tr_A_InvX_Adx_Y(const Block_Info &block_info, const SDP &sdp, const
 
 void compute_tr_A_InvX_Adx_Y_vs_Sdx(const Block_Info &block_info, const SDP &sdp, const Block_Vector &dx,
 	const Block_Diagonal_Matrix &X_cholesky, const Block_Diagonal_Matrix &Y, const Block_Diagonal_Matrix &schur_complement, Block_Vector &result);
+
+void check_A_InvX(const Block_Info &block_info, const SDP &sdp,
+	const std::array<
+	std::vector<std::vector<std::vector<El::DistMatrix<El::BigFloat>>>>, 2>
+	&A_X_inv, const Block_Diagonal_Matrix &X_cholesky, const Block_Diagonal_Matrix &X, const Block_Vector &x);
+
+void check_S_identity(const Block_Info &block_info, const SDP &sdp,
+	const Block_Diagonal_Matrix &schur_complement, const Block_Diagonal_Matrix &X_cholesky,
+	const Block_Diagonal_Matrix &X, const Block_Diagonal_Matrix &Y,
+	const Block_Vector &x, const Block_Vector &dx);
+
+void check_S_identity_V2(const Block_Info &block_info, const SDP &sdp,
+	const Block_Diagonal_Matrix &schur_complement, const Block_Diagonal_Matrix &X_cholesky,
+	const Block_Diagonal_Matrix &X, const Block_Diagonal_Matrix &Y,
+	const Block_Vector &x, const Block_Vector &dx);
+
 
 void SDP_Solver::step(
   const Solver_Parameters &parameters, const std::size_t &total_psd_rows,
@@ -373,7 +389,7 @@ void SDP_Solver::step(
 
 		Block_Vector trApY_V2(x);
 
-		compute_trA_Y_V2(block_info, sdp, A_Y, trApY_V2);
+		compute_tr_AM_pair(block_info, sdp, A_Y, trApY_V2);
 
 
 		/*
@@ -437,17 +453,40 @@ void SDP_Solver::step(
 		//if (El::mpi::Rank() == 0)std::cout << "[Corrector] :#tr(Ap Y)_V2 - tr(Ap Y)_V1=" << trApY_V2_minus_V1_max << "\n";
 		
 
-		if (El::mpi::Rank() == 0)std::cout << "----------- check S identity ---------------" << "\n" << std::flush;
+		if (El::mpi::Rank() == 0)std::cout << "----------- check S identity V1 vs V2-------" << "\n" << std::flush;
 
 		Block_Vector test_S_identity_dx(x);
 		compute_tr_A_InvX_Adx_Y_vs_Sdx(block_info, sdp, dx, X_cholesky, Y, schur_complement, test_S_identity_dx);
 		El::BigFloat test_S_identity_dx_max = Block_Vector_p_max_V3(block_info, test_S_identity_dx);
 		if (El::mpi::Rank() == 0)std::cout << "[S identity][Corrector dx]=" << test_S_identity_dx_max << "\n";
 
+		check_S_identity(block_info, sdp, schur_complement, X_cholesky, X, Y, x, dx);
+
+		if (El::mpi::Rank() == 0)std::cout << "----------- check S identity ---------------" << "\n" << std::flush;
+
+		check_S_identity_V2(block_info, sdp, schur_complement, X_cholesky, X, Y, x, dx);
+
+		/*
+		if (El::mpi::Rank() == 0)std::cout << "----------- S identity component BEGIN ---------------" << "\n" << std::flush;
+		for (size_t localID = 0; localID != block_info.block_indices.size(); ++localID)
+		{
+			size_t globalID(block_info.block_indices.at(localID));
+			auto &curblock = test_S_identity_dx.blocks.at(localID);
+
+			El::BigFloat local_max = El::MaxAbs(curblock);
+			std::cout << "[Rank" << El::mpi::Rank() << "]" << " globalID=" << globalID
+				<< ", max=" << local_max << "\n";
+		}
+		if (El::mpi::Rank() == 0)std::cout << "----------- S identity component END ---------------" << "\n" << std::flush;
+		*/
+
 		Block_Vector test_S_identity_x(x);
 		compute_tr_A_InvX_Adx_Y_vs_Sdx(block_info, sdp, x, X_cholesky, Y, schur_complement, test_S_identity_x);
 		El::BigFloat test_S_identity_x_max = Block_Vector_p_max_V3(block_info, test_S_identity_x);
 		if (El::mpi::Rank() == 0)std::cout << "[S identity][x]=" << test_S_identity_x_max << "\n";
+
+
+		check_A_InvX(block_info, sdp, A_X_inv, X_cholesky, X, x);
 
 		if (El::mpi::Rank() == 0)std::cout << "---------------------------------------------" << "\n" << std::flush;
 
