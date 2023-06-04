@@ -133,6 +133,11 @@ void check_S_identity_V2(const Block_Info &block_info, const SDP &sdp,
 	const Block_Diagonal_Matrix &X, const Block_Diagonal_Matrix &Y,
 	const Block_Vector &x, const Block_Vector &dx);
 
+void check_S_symmetry(const Block_Info &block_info, const SDP &sdp,
+	const Block_Diagonal_Matrix &schur_complement, const Block_Diagonal_Matrix &X_cholesky,
+	const Block_Diagonal_Matrix &X, const Block_Diagonal_Matrix &Y,
+	const Block_Vector &x, const Block_Vector &dx);
+
 
 void SDP_Solver::step(
   const Solver_Parameters &parameters, const std::size_t &total_psd_rows,
@@ -453,7 +458,6 @@ void SDP_Solver::step(
 		//if (El::mpi::Rank() == 0)std::cout << "[Corrector] :#tr(Ap Y)_V2 - tr(Ap Y)_V1=" << trApY_V2_minus_V1_max << "\n";
 		
 
-		if (El::mpi::Rank() == 0)std::cout << "----------- check S identity V1 vs V2-------" << "\n" << std::flush;
 
 		Block_Vector test_S_identity_dx(x);
 		compute_tr_A_InvX_Adx_Y_vs_Sdx(block_info, sdp, dx, X_cholesky, Y, schur_complement, test_S_identity_dx);
@@ -462,9 +466,9 @@ void SDP_Solver::step(
 
 		check_S_identity(block_info, sdp, schur_complement, X_cholesky, X, Y, x, dx);
 
-		if (El::mpi::Rank() == 0)std::cout << "----------- check S identity ---------------" << "\n" << std::flush;
-
 		check_S_identity_V2(block_info, sdp, schur_complement, X_cholesky, X, Y, x, dx);
+
+		check_S_symmetry(block_info, sdp, schur_complement, X_cholesky, X, Y, x, dx);
 
 		/*
 		if (El::mpi::Rank() == 0)std::cout << "----------- S identity component BEGIN ---------------" << "\n" << std::flush;
@@ -611,6 +615,7 @@ void SDP_Solver::step(
   dX *= primal_step_length;
 
   X += dX;
+  X.symmetrize();
 
   // Update the dual point (y, Y) += dualStepLength*(dy, dY)
   for(size_t block = 0; block < dy.blocks.size(); ++block)
@@ -620,6 +625,7 @@ void SDP_Solver::step(
   dY *= dual_step_length;
 
   Y += dY;
+  Y.symmetrize();
 
 
   //////////////// debug Slater /////////////

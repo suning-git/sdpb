@@ -16,6 +16,8 @@
 #include <list>
 #include <vector>
 
+class Block_Info;
+
 struct Block_Vector
 {
   std::vector<El::DistMatrix<El::BigFloat>> blocks;
@@ -41,4 +43,7 @@ struct Block_Vector
       }
   }
   Block_Vector() = default;
+
+  void print(const Block_Info &block_info, const std::string file_path_no_suffix);
+  void print(const Block_Info &block_info, size_t globalID_to_print, const std::string file_path_no_suffix);
 };

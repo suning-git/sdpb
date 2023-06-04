@@ -11,6 +11,9 @@
 
 #include <list>
 
+
+class Block_Info;
+
 // A block-diagonal square matrix
 //
 //   M = Diagonal(M_0, M_1, ..., M_{bMax-1})
@@ -108,6 +111,22 @@ public:
       }
   }
 
+  void antisymmetrize()
+  {
+	  for (auto &block : blocks)
+	  {
+		  // FIXME: This feels expensive
+
+		  // We can not use El::MakeSymmetric() because that just copies
+		  // the lower part to the upper part.  We need to average the
+		  // upper and lower parts.
+		  block *= El::BigFloat("0.5");
+		  El::DistMatrix<El::BigFloat> transpose(block.Grid());
+		  El::Transpose(block, transpose, false);
+		  block -= transpose;
+	  }
+  }
+
   void MakeTrapezoidal(El::UpperOrLower uplo)
   {
 	  for (auto &block : blocks)
@@ -139,5 +158,8 @@ public:
 
   friend std::ostream &
   operator<<(std::ostream &os, const Block_Diagonal_Matrix &A);
+
+  void print(const Block_Info &block_info, const std::string file_path_no_suffix);
+  void print(const Block_Info &block_info, size_t globalID_to_print, const std::string file_path_no_suffix);
 };
 

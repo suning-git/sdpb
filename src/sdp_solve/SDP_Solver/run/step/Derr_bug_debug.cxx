@@ -32,6 +32,14 @@ El::BigFloat dot(const Block_Vector &A, const Block_Vector &B);
 
 El::BigFloat min_eigenvalue(Block_Diagonal_Matrix &A);
 
+void print_Matrix_block(const Block_Info &block_info, const Block_Diagonal_Matrix &mat, size_t globalID_to_print, const std::string file_suffix);
+void print_Vector_block(const Block_Info &block_info, const Block_Vector &mat, size_t globalID_to_print, const std::string file_suffix);
+
+void print_Vector(const Block_Info &block_info, const Block_Vector &mat, const std::string file_suffix);
+void print_Matrix(const Block_Info &block_info, const Block_Diagonal_Matrix &mat, const std::string file_suffix);
+
+void write_psd_block(const boost::filesystem::path &outfile, const El::DistMatrix<El::BigFloat> &block);
+
 El::BigFloat min_eigenvalue_safe(const Block_Diagonal_Matrix &A)
 {
 	Block_Diagonal_Matrix A_copy(A);
@@ -839,7 +847,6 @@ void compute_minus_InvX_Apdx_Y(const Block_Info &block_info, const SDP &sdp, con
 }
 
 
-
 ////////////////////// check tr(A_i X^-1 (A.dx) Y)  vs  S.dx //////////////////
 
 void compute_tr_A_InvX_Adx_Y(const Block_Info &block_info, const SDP &sdp, const Block_Vector &dx,
@@ -856,20 +863,53 @@ void compute_tr_A_InvX_Adx_Y(const Block_Info &block_info, const SDP &sdp, const
 	compute_trAp_Z(block_info, sdp, InvX_Adx_Y, result);
 }
 
+//  tr(A.dx InvX A Y) = tr(A Y A.dx InvX)
+void compute_tr_A_Y_Adx_InvX(const Block_Info &block_info, const SDP &sdp, const Block_Vector &dx,
+	const Block_Diagonal_Matrix &X_cholesky, const Block_Diagonal_Matrix &Y, Block_Vector &result)
+{
+	Block_Diagonal_Matrix InvX(Y);
+	InvX *= 0;
+	InvX.add_diagonal(1);
+	cholesky_solve(X_cholesky, InvX);
+
+	Block_Diagonal_Matrix Adx(Y);
+	constraint_matrix_weighted_sum(block_info, sdp, dx, Adx);
+
+	//Adx.print(block_info, "./testdata/Adx");
+
+	Block_Diagonal_Matrix Adx_InvX(Y);
+	multiply(Adx, InvX, Adx_InvX);
+	//Adx_InvX.print(block_info, "./testdata/Adx_InvX");
+	Block_Diagonal_Matrix Y_Adx_InvX(Y);
+	multiply(Y, Adx_InvX, Y_Adx_InvX);
+	//Y_Adx_InvX.print(block_info, "./testdata/Y_Adx_InvX");
+
+	compute_trAp_Z(block_info, sdp, Y_Adx_InvX, result);
+
+	Block_Diagonal_Matrix InvX_antisym(InvX), Y_antisym(Y);
+	InvX_antisym.antisymmetrize();
+	Y_antisym.antisymmetrize();
+	El::BigFloat InvX_antisym_max = InvX_antisym.max_abs_mpi();
+	El::BigFloat Y_antisym_max = Y_antisym.max_abs_mpi();
+
+	if (El::mpi::Rank() == 0)std::cout << "[check sym] InvX_antisym_max=" << InvX_antisym_max
+		<< ", Y_antisym_max=" << Y_antisym_max << "\n";
+
+	Y.print(block_info, "./testdata/Y");
+}
+
 
 void compute_tr_A_InvX_Adx_Y_vs_Sdx(const Block_Info &block_info, const SDP &sdp, const Block_Vector &dx,
 	const Block_Diagonal_Matrix &X_cholesky, const Block_Diagonal_Matrix &Y, const Block_Diagonal_Matrix &schur_complement, Block_Vector &result)
 {
 	compute_tr_A_InvX_Adx_Y(block_info, sdp, dx, X_cholesky, Y, result);
+	//compute_tr_A_Y_Adx_InvX(block_info, sdp, dx, X_cholesky, Y, result);
 
 	Block_Vector Sdx(dx);
 	compute_Sx(block_info, schur_complement, dx, Sdx);
 
 	Block_Vector_minus_equal(result, Sdx);
 }
-
-
-void print_Matrix_block(const Block_Info &block_info, const Block_Diagonal_Matrix &mat, size_t globalID_to_print, const std::string file_suffix);
 
 
 
@@ -925,11 +965,11 @@ void check_A_InvX(const Block_Info &block_info, const SDP &sdp,
 	El::BigFloat check_InvX_sym_max = check_InvX_sym.max_abs_mpi();
 	if (El::mpi::Rank() == 0)std::cout << "[check A_InvX] : check_InvX_sym_max=" << check_InvX_sym_max << "\n";
 
-	/**/
+	/*
 	print_Matrix_block(block_info, InvX, 3, "pd35_InvX");
 	print_Matrix_block(block_info, X, 3, "pd35_X");
 	print_Matrix_block(block_info, X_cholesky, 3, "pd35_choleskyX");
-	
+	*/
 
 }
 
@@ -958,10 +998,12 @@ void check_S_identity(const Block_Info &block_info, const SDP &sdp,
 	El::BigFloat S_21 = dot(vec2, S_v1);
 	El::BigFloat S_22 = dot(vec2, S_v2);
 
-	if (El::mpi::Rank() == 0)std::cout << "[S identity] : S11 V1-V2 =" << S_11 << "\n";
-	if (El::mpi::Rank() == 0)std::cout << "[S identity] : S12 V1-V2 =" << S_12 << "\n";
-	if (El::mpi::Rank() == 0)std::cout << "[S identity] : S21 V1-V2 =" << S_21 << "\n";
-	if (El::mpi::Rank() == 0)std::cout << "[S identity] : S22 V1-V2 =" << S_22 << "\n";
+	if (El::mpi::Rank() == 0)std::cout << "----------- check S identity A vs S-------" << "\n" << std::flush;
+
+	if (El::mpi::Rank() == 0)std::cout << "[S identity] : (A-S)11 =" << S_11 << "\n";
+	if (El::mpi::Rank() == 0)std::cout << "[S identity] : (A-S)12 =" << S_12 << "\n";
+	if (El::mpi::Rank() == 0)std::cout << "[S identity] : (A-S)21 =" << S_21 << "\n";
+	if (El::mpi::Rank() == 0)std::cout << "[S identity] : (A-S)22 =" << S_22 << "\n";
 
 	El::BigFloat SvsA_p1_max = Block_Vector_p_max_V3(block_info, S_v1);
 	El::BigFloat SvsA_p2_max = Block_Vector_p_max_V3(block_info, S_v2);
@@ -986,6 +1028,7 @@ void check_S_identity_V2(const Block_Info &block_info, const SDP &sdp,
 	v2_v2 = dot(vec2, vec2);
 
 	Block_Vector AInvXAY_v1(x), AInvXAY_v2(x), S_v1(x), S_v2(x);
+	// compute_tr_A_InvX_Adx_Y (A) or compute_tr_A_Y_Adx_InvX (B) 
 	compute_tr_A_InvX_Adx_Y(block_info, sdp, vec1, X_cholesky, Y, AInvXAY_v1);
 	compute_tr_A_InvX_Adx_Y(block_info, sdp, vec2, X_cholesky, Y, AInvXAY_v2);
 	compute_Sx(block_info, schur_complement, vec1, S_v1);
@@ -1001,6 +1044,10 @@ void check_S_identity_V2(const Block_Info &block_info, const SDP &sdp,
 	El::BigFloat AInvXAY_21 = dot(vec2, AInvXAY_v1);
 	El::BigFloat AInvXAY_22 = dot(vec2, AInvXAY_v2);
 
+	// A=v2.tr(A.InvX.Av1.Y)
+	// B=v2.tr(A.Y.Av1.InvX)
+	if (El::mpi::Rank() == 0)std::cout << "----------- check S identity : : A=v2.tr(A.InvX.Av1.Y), S=v2.S.v1  ---------------" << "\n" << std::flush;
+
 	if (El::mpi::Rank() == 0)std::cout << 
 		"[S identity] : S11=" << S_11 << ", S12=" << S_12 << ", S21=" << S_21 << ", S22=" << S_22
 		<< ", S12-S21=" << (S_12 - S_21) << "\n";
@@ -1013,6 +1060,110 @@ void check_S_identity_V2(const Block_Info &block_info, const SDP &sdp,
 		"[S identity] : A12-S12=" << (S_12 - AInvXAY_12) << ", A21-S21=" << (AInvXAY_21 - S_21) << "\n";
 }
 
+
+
+void check_S_symmetry(const Block_Info &block_info, const SDP &sdp,
+	const Block_Diagonal_Matrix &schur_complement, const Block_Diagonal_Matrix &X_cholesky,
+	const Block_Diagonal_Matrix &X, const Block_Diagonal_Matrix &Y,
+	const Block_Vector &x, const Block_Vector &dx)
+{
+	Block_Vector vec1(x), vec2(x);
+	Block_Vector_p_Unit(block_info, vec1, 3, 0, 0, 3);
+	Block_Vector_p_Unit(block_info, vec2, 3, 0, 0, 4);
+
+	El::BigFloat v1_v1, v1_v2, v2_v2;
+	v1_v1 = dot(vec1, vec1);
+	v1_v2 = dot(vec1, vec2);
+	v2_v2 = dot(vec2, vec2);
+
+	Block_Vector A_v1(x), A_v2(x), B_v1(x), B_v2(x);
+	// compute_tr_A_InvX_Adx_Y or compute_tr_A_Y_Adx_InvX(incorrect)
+	compute_tr_A_InvX_Adx_Y(block_info, sdp, vec1, X_cholesky, Y, A_v1);
+	compute_tr_A_InvX_Adx_Y(block_info, sdp, vec2, X_cholesky, Y, A_v2);
+	
+	//compute_Sx(block_info, schur_complement, vec1, S_v1);
+	//compute_Sx(block_info, schur_complement, vec2, S_v2);
+
+	compute_tr_A_Y_Adx_InvX(block_info, sdp, vec1, X_cholesky, Y, B_v1);
+	compute_tr_A_Y_Adx_InvX(block_info, sdp, vec2, X_cholesky, Y, B_v2);
+
+	El::BigFloat B_11 = dot(vec1, B_v1);
+	El::BigFloat B_12 = dot(vec1, B_v2);
+	El::BigFloat B_21 = dot(vec2, B_v1);
+	El::BigFloat B_22 = dot(vec2, B_v2);
+
+	El::BigFloat A_11 = dot(vec1, A_v1);
+	El::BigFloat A_12 = dot(vec1, A_v2);
+	El::BigFloat A_21 = dot(vec2, A_v1);
+	El::BigFloat A_22 = dot(vec2, A_v2);
+
+	if (El::mpi::Rank() == 0)std::cout << "-------- check S symmetry : A21=v2.tr(A.InvX.Av1.Y), B21=v2.tr(A.Y.Av1.InvX) --------" << "\n" << std::flush;
+
+	if (El::mpi::Rank() == 0)std::cout <<
+		"[S identity] : B11=" << B_11 << ", B12=" << B_12 << ", B21=" << B_21 << ", B22=" << B_22
+		<< ", B12-B21=" << (B_12 - B_21) << "\n";
+
+	if (El::mpi::Rank() == 0)std::cout <<
+		"[S identity] : A11=" << A_11 << ", A12=" << A_12 << ", A21=" << A_21 << ", A22=" << A_22
+		<< ", A12-A21=" << (A_12 - A_21) << "\n";
+
+	if (El::mpi::Rank() == 0)std::cout 
+		<< "[S identity] : A12-B12=" << (A_12 - B_12) << ", A21-B21=" << (A_21 - B_21)
+		<< ", A12-B21=" << (A_12 - B_21) << ", A21-B12=" << (A_21 - B_12) << "\n";
+
+	if (El::mpi::Rank() == 0)std::cout << "------------------------------------------" << "\n" << std::flush;
+
+}
+
+void check_S_symmetry_V2(const Block_Info &block_info, const SDP &sdp,
+	const Block_Diagonal_Matrix &schur_complement, const Block_Diagonal_Matrix &X_cholesky,
+	const Block_Diagonal_Matrix &X, const Block_Diagonal_Matrix &Y,
+	const Block_Vector &x, const Block_Vector &dx)
+{
+	Block_Vector vec1(x), vec2(x);
+	Block_Vector_p_Unit(block_info, vec1, 3, 0, 0, 3);
+	Block_Vector_p_Unit(block_info, vec2, 3, 0, 0, 4);
+
+	El::BigFloat v1_v1, v1_v2, v2_v2;
+	v1_v1 = dot(vec1, vec1);
+	v1_v2 = dot(vec1, vec2);
+	v2_v2 = dot(vec2, vec2);
+
+	Block_Vector A_v1(x), A_v2(x), B_v1(x), B_v2(x);
+	// compute_tr_A_InvX_Adx_Y or compute_tr_A_Y_Adx_InvX(incorrect)
+	compute_tr_A_InvX_Adx_Y(block_info, sdp, vec1, X_cholesky, Y, A_v1);
+	compute_tr_A_InvX_Adx_Y(block_info, sdp, vec2, X_cholesky, Y, A_v2);
+
+	compute_tr_A_Y_Adx_InvX(block_info, sdp, vec1, X_cholesky, Y, B_v1);
+	compute_tr_A_Y_Adx_InvX(block_info, sdp, vec2, X_cholesky, Y, B_v2);
+
+	El::BigFloat B_11 = dot(vec1, B_v1);
+	El::BigFloat B_12 = dot(vec1, B_v2);
+	El::BigFloat B_21 = dot(vec2, B_v1);
+	El::BigFloat B_22 = dot(vec2, B_v2);
+
+	El::BigFloat A_11 = dot(vec1, A_v1);
+	El::BigFloat A_12 = dot(vec1, A_v2);
+	El::BigFloat A_21 = dot(vec2, A_v1);
+	El::BigFloat A_22 = dot(vec2, A_v2);
+
+	if (El::mpi::Rank() == 0)std::cout << "-------- check why A is not symmetric : A21=v2.tr(A.InvX.Av1.Y) --------" << "\n" << std::flush;
+
+	if (El::mpi::Rank() == 0)std::cout <<
+		"[S identity] : B11=" << B_11 << ", B12=" << B_12 << ", B21=" << B_21 << ", B22=" << B_22
+		<< ", B12-B21=" << (B_12 - B_21) << "\n";
+
+	if (El::mpi::Rank() == 0)std::cout <<
+		"[S identity] : A11=" << A_11 << ", A12=" << A_12 << ", A21=" << A_21 << ", A22=" << A_22
+		<< ", A12-A21=" << (A_12 - A_21) << "\n";
+
+	if (El::mpi::Rank() == 0)std::cout
+		<< "[S identity] : A12-B12=" << (A_12 - B_12) << ", A21-B21=" << (A_21 - B_21)
+		<< ", A12-B21=" << (A_12 - B_21) << ", A21-B12=" << (A_21 - B_12) << "\n";
+
+	if (El::mpi::Rank() == 0)std::cout << "------------------------------------------" << "\n" << std::flush;
+
+}
 
 
 
@@ -1041,45 +1192,7 @@ print_Matrix_block(block_info, InvTXCholesky_InvXCholesky, 3, "pd11_InvTXCholesk
 */
 
 
-void write_psd_block(const boost::filesystem::path &outfile,
-	const El::DistMatrix<El::BigFloat> &block)
-{
-	boost::filesystem::ofstream stream;
-	if (block.DistRank() == block.Root())
-	{
-		stream.open(outfile);
-	}
-	El::Print(block,
-		std::to_string(block.Height()) + " "
-		+ std::to_string(block.Width()),
-		"\n", stream);
-	if (block.DistRank() == block.Root())
-	{
-		stream << "\n";
-		if (!stream.good())
-		{
-			throw std::runtime_error("Error when writing to: "
-				+ outfile.string());
-		}
-	}
-}
 
-void print_Matrix_block(const Block_Info &block_info, const Block_Diagonal_Matrix &mat, size_t globalID_to_print, const std::string file_suffix)
-{
-	for (size_t block = 0; block != block_info.block_indices.size(); ++block)
-	{
-		size_t block_index(block_info.block_indices.at(block));
-		for (size_t psd_block(0); psd_block < 2; ++psd_block)
-		{
-			int globalID = 2 * block_index + psd_block;
-			int localID = 2 * block + psd_block;
 
-			auto &curblock = mat.blocks.at(localID);
 
-			if (globalID == globalID_to_print)
-			{
-				write_psd_block("./testdata/"+ file_suffix + "_" + std::to_string(globalID) + ".txt", curblock);
-			}
-		}
-	}
-}
+
