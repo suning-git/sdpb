@@ -437,6 +437,16 @@ El::BigFloat compute_beta_for_finite_dGap(const El::BigFloat & current_dGap, con
 }
 
 
+void compute_u_finite_diff(
+	const Dynamical_Solver &solver,
+	const Dynamical_Solver_Parameters &dynamical_parameters,
+	const SDP &sdp, const Block_Info &block_info,
+	const Block_Vector & dx, const Block_Diagonal_Matrix & X_cholesky,
+	const std::size_t &total_psd_rows,
+	const El::BigFloat &mu_diff,
+	El::BigFloat & deriv_u_withoutlog, El::BigFloat & deriv_u_withlog
+);
+
 bool external_corrector_jump_to_newSDP = true;
 
 void Dynamical_Solver::dynamical_step(
@@ -651,12 +661,14 @@ void Dynamical_Solver::dynamical_step(
 		schur_complement_cholesky, schur_off_diagonal, Q, x, y, X_cholesky, n_external_parameters,
 		eplus, eminus, esum, Lpu, grad_withoutlog, grad_withlog, H_xp, Delta_xy);
 
-	/**/
+	/*
 	if (El::mpi::Rank() == 0)std::cout << "eplus[0]=" << eplus(0) 
 		<< " grad_withoutlog=" << grad_withoutlog(0)
 		<< " Lpu(0)=" << Lpu(0) 
 		<< "\n";
-		
+		*/
+
+
 	if (dynamical_parameters.finite_dGap_target > 0)
 		beta_scan_begin_El = beta_scan_end_El = 1;
 
@@ -669,6 +681,12 @@ void Dynamical_Solver::dynamical_step(
 		internal_corrector_direction(block_info, sdp, *this, schur_complement_cholesky,
 			schur_off_diagonal, X_cholesky, beta,
 			mu, primal_residue_p, Q, grad_x, grad_y, internal_dx, internal_dy, dX, dY, R);
+
+		El::BigFloat mu_diff = mu * (beta - 1);
+		compute_u_finite_diff(*this, dynamical_parameters, sdp, block_info,
+			internal_dx, X_cholesky, total_psd_rows, mu_diff,
+			nvg_diffu_withoutlog, nvg_diffu_withlog);
+
                 //update_Lpu(block_info, sdp, internal_dx, X_cholesky);
 		// compute various variables according to the formula
                 // grad_corrected = grad_p (grad_withoutlog or grad_withlog) 
@@ -705,7 +723,7 @@ void Dynamical_Solver::dynamical_step(
 		// compute external step
 		if (dynamical_parameters.find_boundary)
 		{
-			strategy_findboundary_extstep(block_info, X_cholesky, total_psd_rows, y.size(),mu, beta,
+			strategy_findboundary_extstep(block_info, X_cholesky, total_psd_rows, y.blocks.at(0).Height(),mu, beta,
 				n_external_parameters, dynamical_parameters, lowest_mu_Q,
 				grad_corrected, grad_p, grad_mixed,
 				external_step, external_step_save, external_step_specified_Q);
@@ -714,7 +732,18 @@ void Dynamical_Solver::dynamical_step(
 		{
 			findMinimumQ = true;
 			// this is not used in minimization mode. we should compute lag_shifted only in "debug" mode
-			lag_shifted = finite_mu_navigator(block_info, X_cholesky, total_psd_rows, y.size(), mu, beta, dynamical_parameters);
+			lag_shifted = finite_mu_navigator(block_info, X_cholesky, total_psd_rows, y.blocks.at(0).Height(), mu, beta, dynamical_parameters);
+
+
+			if (El::mpi::Rank() == 0)
+			{
+				std::cout << "test BFGS hess =\n";
+				print_matrix(hess_BFGS);
+				std::cout << "\n";
+				std::cout << "grad_corrected= ";
+				print_vector(grad_corrected);
+				std::cout << "\n";
+			}
 
 			external_step = grad_corrected;
 			external_step *= (-1);

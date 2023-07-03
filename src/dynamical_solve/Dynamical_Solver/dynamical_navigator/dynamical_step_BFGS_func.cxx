@@ -357,7 +357,7 @@ void read_sdp_grid(
 
 				//eplus(dir_index1) = approx_obj.d_objective + approx_obj.dd_objective; 
 
-				/**/
+				/*
 				grad_withoutlog(dir_index1) = compute_primalobj_gradient_V2(block_info,
 					sdp, d_sdp, x, y,
 					schur_complement_cholesky, schur_off_diagonal, Q);
@@ -365,6 +365,8 @@ void read_sdp_grid(
 				if (El::mpi::Rank() == 0) std::cout << "compute_primalobj_gradient_V2 :"
 					<< grad_withoutlog(dir_index1)
 					<< '\n' << std::flush;
+					*/
+
 					
 				grad_withoutlog(dir_index1) = compute_primalobj_gradient_V3(block_info,
 					sdp, d_sdp, x, y,
@@ -702,8 +704,30 @@ void compute_grad_p_grad_mixed_Hpp_Hmixed(const Dynamical_Solver_Parameters &dyn
 		grad_corrected = grad_mixed;
 		grad_corrected += grad_p;
 	}
-
 }
+
+
+El::Base<El::BigFloat> det_log_cholesky_fix(const Block_Diagonal_Matrix &L, const Dynamical_Solver &solver, const Block_Info &block_info);
+
+void compute_u_finite_diff(
+	const Dynamical_Solver &solver,
+	const Dynamical_Solver_Parameters &dynamical_parameters,
+	const SDP &sdp, const Block_Info &block_info,
+	const Block_Vector & dx, const Block_Diagonal_Matrix & X_cholesky,
+	const std::size_t &total_psd_rows,
+	const El::BigFloat & mu_diff,
+	El::BigFloat & deriv_u_withoutlog, El::BigFloat & deriv_u_withlog
+)
+{
+	deriv_u_withoutlog = dot(sdp.primal_objective_c, dx);
+	deriv_u_withlog = - det_log_cholesky_fix(X_cholesky, solver, block_info) * mu_diff;
+
+	El::BigFloat mudiff_lambda_dimX = total_psd_rows * dynamical_parameters.lagrangian_muI_shift * mu_diff;
+
+	deriv_u_withlog -= mudiff_lambda_dimX;
+	deriv_u_withoutlog -= mudiff_lambda_dimX;
+}
+
 
 
 void read_prev_grad_step_hess(const Dynamical_Solver_Parameters &dynamical_parameters,
@@ -1277,7 +1301,7 @@ void Dynamical_Solver::strategy_hess_BFGS(const Dynamical_Solver_Parameters &dyn
 	}
 	else
 	{
-		if (El::mpi::Rank() == 0)std::cout << "using BFGS: " << '\n' << std::flush;
+		if (El::mpi::Rank() == 0)std::cout << "using BFGS: HmixedQ=" << dynamical_parameters.use_Hmixed_for_BFGS << '\n' << std::flush;
 
 		if (dynamical_parameters.use_Hmixed_for_BFGS) // I will let simpleboot control whether hess_mixed will be used for hess_BFGS
 		{
@@ -1287,6 +1311,7 @@ void Dynamical_Solver::strategy_hess_BFGS(const Dynamical_Solver_Parameters &dyn
 			hess_BFGS -= hess_mixed;
 			positivitize_matrix(hess_BFGS);
 			hess_BFGS *= El::BigFloat(rescale_initial_hess);
+
 		}
 		else
 		{
@@ -1377,6 +1402,15 @@ El::BigFloat Dynamical_Solver::finite_mu_navigator(
 	El::BigFloat lag_shifted = lag;
 	lag_shifted -= total_psd_rows * mu * dynamical_parameters.lagrangian_muI_shift;
 
+	if (El::mpi::Rank() == 0) std::cout
+		<< "Automatic shift : total_psd_rows=" << total_psd_rows
+		<< " dim_y=" << dim_y
+		<< " shift=" << (total_psd_rows - dim_y) * mu * El::Log(mu)
+		<< " mulogdetX=" << mu * mulogdetX
+		<< " P-obj=" << this->primal_objective
+		<< " D-obj=" << this->dual_objective
+		<< "\n";
+
 	if (dynamical_parameters.navigatorAutomaticShiftQ)
 	{
 		El::BigFloat shift = (total_psd_rows - dim_y) * mu * El::Log(mu);
@@ -1440,6 +1474,11 @@ void Dynamical_Solver::strategy_findboundary_extstep(
 			if (use_Lpu_mu_correction)
 				std::cout << "\nLpu corrected : \n";
 
+			auto prec = std::cout.precision();
+			std::cout.precision(20);
+
+			std::cout << "lag_shifted=" << lag_shifted << "\n";
+
 			std::cout << "BFGS hess =\n";
 			print_matrix(hess_BFGS);
 
@@ -1464,8 +1503,69 @@ void Dynamical_Solver::strategy_findboundary_extstep(
 			findMinimumQ = (lambda < 0);
 
 			print_vector(external_step_plus);
+
 			std::cout << "\n" << std::flush;
+
+			std::cout.precision(prec);
 		}
+
+		/////////////////////////////////
+		El::BigFloat nvg_diffu;
+		if (dynamical_parameters.beta_for_mu_logdetX < 0)
+			nvg_diffu = nvg_diffu_withlog;
+		else
+			nvg_diffu = nvg_diffu_withoutlog;
+
+		El::BigFloat lag_shifted_newmu = lag_shifted + nvg_diffu;
+		compute_ellipse_boundary(hess_BFGS, grad_corrected, lag_shifted_newmu, search_direction,
+			external_step_plus, external_step_minus, lambda);
+		external_step = external_step_plus;
+
+		if (El::mpi::Rank() == 0)
+		{
+			std::cout << "--------- test --------------- \n";
+
+			auto prec = std::cout.precision();
+			std::cout.precision(20);
+
+			std::cout << "lag_shifted=" << lag_shifted
+				<< " nvg_diffu=" << nvg_diffu
+				<< " lag_shifted_newmu=" << lag_shifted_newmu << "\n";
+
+			std::cout << "BFGS hess =\n";
+			print_matrix(hess_BFGS);
+
+			std::cout << "grad_corrected = ";
+			print_vector(grad_corrected);
+			std::cout << "\n";
+
+			std::cout << "grad_p = ";
+			print_vector(grad_p);
+			std::cout << "\n";
+
+			std::cout << "grad_mixed = ";
+			print_vector(grad_mixed);
+			std::cout << "\n";
+
+			std::cout << " lambda=" << lambda << "\n";
+			if (lambda < 0)
+				std::cout << "ext-step_zero=";
+			else
+				std::cout << "ext-step_plus=";
+
+			findMinimumQ = (lambda < 0);
+
+			print_vector(external_step_plus);
+
+			std::cout << "\n" << std::flush;
+
+			std::cout.precision(prec);
+
+			std::cout << "------------------------------ \n";
+		}
+
+		/////////////////////////////////
+
 
 		external_step_save = external_step;
 		external_step_specified_Q = true;

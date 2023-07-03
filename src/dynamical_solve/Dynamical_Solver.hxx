@@ -69,6 +69,8 @@ public:
 
   El::BigFloat mulogdetX;
 
+  El::BigFloat nvg_diffu_withoutlog, nvg_diffu_withlog;
+
   std::vector<std::pair<El::BigFloat, El::BigFloat>> beta_scan_recorder;
 
   El::BigFloat final_beta;
